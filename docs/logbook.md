@@ -21,7 +21,7 @@ Archivo de registro de avances, pruebas, decisiones y notas en sucio.
 
 ---
 
-## [29/07/2026] - Extracción de datos 
+## [29/07/2026] - Extracción de datos (01_data_extraction.ipynb)
 
 ### 📝 Notas y decisiones
 
@@ -43,5 +43,50 @@ La función ``validate_download`` identifica los Tickers pedidos que sí tienen 
 
 La función ``remove_empty_tickers`` quita las empresas cuyos valores sean todos NaN en las fechas estipuladas. Obviamente si introduces esta función antes que la validación, estas cuatro empresas van a pasar de la categoría *Empty tickers (NaN)* a la categoría *Missing tickers*, pero nos asegurmos de que ya no trabajamos con ellos, quedándonos así con 499 empresas.
 
-## [30/07/2026] - Data Quality & Cleaning
-...
+ACLARACIÓN: no se por qué ahora también se mete como NaN en todos sus valores la empresa 'QCOM' como  "possibly delisted; no price data found  (1d 2010-01-01 -> 2024-12-31)" que es un mensaje diferente al de las otras cuatro empresas. 
+
+ACTUALIZACION: lo he vuelto a cargar y ese quinto valor ya no me aparece como missing. 
+
+## [30/07/2026] - Data Quality & Cleaning (02_data_cleaning.ipynb)
+
+### 📝 Notas y decisiones
+
+Aquí vamos a crear funciones que nos inspeccionen los datos para saber: 
+
+- **Información general**: número de activos, número de observaciones, rango temporal, frecuencia temporal.
+
+- **Valores perdidos**: no solo los activos completamente vacíos (ya solucionado) sino los NaN de cada empresa. 
+
+- **Fechas duplicadas**.
+
+- **Índice ordenado**.
+
+- **Valores imposibles**: el Adj Close debe ser mayor que cero, el High debe ser mayor que el Low o el Volume positivo. 
+
+- **Frecuencia**: comprobar que realmente estamos trabajando con datos diarios. 
+
+- **Huecos largos**: decidir qué hacer con aquellas empresas que hayan empezado a cotizar muy tarde. 
+
+**Funciones de validación de calidad de datos**
+
+``describe_yfinance_data(df)``: resume la estructura del dataset. Identifica el número de activos, número de observaciones temporales, fechas de inicio y fin, e intenta inferir la frecuencia temporal del índice.
+
+``summarize_date_gaps(df)``: analiza los intervalos, en días naturales, entre cada par de fechas consecutivas del índice. Devuelve cuántas veces aparece cada tipo de salto temporal, lo que permite distinguir la continuidad habitual de las sesiones bursátiles de los fines de semana, festivos o posibles fechas ausentes.
+
+``count_nans_by_ticker(df)``: cuenta los valores ausentes (NaN) de cada empresa. El resultado agrega los valores faltantes de todos los campos disponibles, como Open, Close, High, Low y Volume.
+
+``has_duplicate_dates(df)``: comprueba si el índice del dataset contiene fechas duplicadas. Devuelve True si existen duplicados y False en caso contrario.
+
+``is_index_sorted(df)``: verifica que el índice temporal esté ordenado cronológicamente de forma ascendente. Devuelve True cuando las fechas están correctamente ordenadas.
+
+``detect_impossible_values(df)``: identifica valores de mercado potencialmente inválidos. Comprueba que Open, High, Low, Close, Adj Close y Volume sean positivos, y que Low no sea mayor que High (y otras relaciones). Devuelve el número de incidencias detectadas para cada empresa.
+
+``get_trading_periods_by_ticker(df)``: identifica la primera y la última fecha con un valor válido de Close para cada empresa. Después separa los activos en dos grupos: los que tienen datos desde la primera hasta la última fecha del dataset y los que comenzaron a cotizar más tarde, dejaron de cotizar antes o no tienen datos disponibles.
+
+ACLARACION: El segundo archivo de jupyter (02_data_cleaning) contiene tanto las formulas del validate_data.py como las del clean_data.py. 
+
+**Limpieza**
+
+Se ha decidido que no se va a introducir ninguna función a este respecto porque no hace falta. Digamos que los dato s son suficientemente limpios como para no teneer que preocuparnos de limpiar, podemos pasar ya directamente al feature enginering. 
+
+ACLARACION: podríamos comnezar ahora un análisis detallado de como se correlacionan los precios, las evouciones temporales y demás pero yo creo que va a ser mejor crearnos los factores y luego hacer ese análisis no sobre precios sino sobre factores. Realmente tiene sentido porque el modelo va a trabajar con conexiones entre factores, no con precios. 

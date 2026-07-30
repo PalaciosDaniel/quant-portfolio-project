@@ -1,12 +1,12 @@
-"""
-Utilities for downloading historical market data.
-"""
+# =============================================================================
+# FUNCTIONS FOR EXTRACTION OF HISTORICAL MARKET DATA
+# =============================================================================
 
 from __future__ import annotations
 import yfinance as yf
 import pandas as pd
 
-# download historical OHLCV data from Yahoo Finance
+
 def download_prices(
     tickers: list[str],
     START_DATE: str,
@@ -21,11 +21,11 @@ def download_prices(
     ----------
     tickers : list[str]
         List of ticker symbols.
-    start : str
+    START_DATE : str
         Start date (YYYY-MM-DD).
-    end : str
+    END_DATE : str
         End date (YYYY-MM-DD).
-    interval : str, default="1d"
+    INTERVAL : str, default="1d"
         Data frequency.
 
     Returns
@@ -54,7 +54,6 @@ def download_prices(
     return prices
 
 
-# validate the downloaded data
 def validate_download(
     prices: pd.DataFrame,
     requested_tickers: list[str],
@@ -74,7 +73,7 @@ def validate_download(
     None
     """
 
-    # 1. Tickers que sí están presentes en las columnas
+    # 1. Tickers that are in columns of the downloaded DataFrame
     downloaded_tickers = (
         prices.columns
               .get_level_values("Ticker")
@@ -82,13 +81,13 @@ def validate_download(
               .tolist()
     )
 
-    # 2. Tickers que directamente no vinieron en la respuesta
+    # 2. Tickers that are not in the downloaded DataFrame (i.e., not returned by the API)
     missing_tickers = sorted(
         set(requested_tickers) - set(downloaded_tickers)
     )
 
-    # 3. Tickers que vinieron pero tienen el 100% de sus datos como NaN
-    # Usamos 'Close' como referencia (o podrías evaluar la sub-tabla entera)
+    # 3. Tickers that came back but have 100% of their data as NaN
+    # We use 'Close' as a reference (or you could evaluate the entire sub-table)
     empty_tickers = []
     if "Close" in prices.columns.get_level_values("Price"):
         close_prices = prices["Close"]
@@ -98,7 +97,7 @@ def validate_download(
     
     empty_tickers = sorted(empty_tickers)
 
-    # 4. Tickers totalmente válidos (tienen columna y al menos algún dato)
+    # 4. Tickers that are valid (downloaded and not empty)
     valid_tickers = sorted(
         set(downloaded_tickers) - set(empty_tickers)
     )
@@ -125,7 +124,7 @@ def validate_download(
     if not missing_tickers and not empty_tickers:
         print("\nAll tickers downloaded and validated successfully.")
 
-#remove tickers whose price history is completely missing
+
 def remove_empty_tickers(prices: pd.DataFrame) -> pd.DataFrame:
     """
     Remove tickers whose price history is completely missing.

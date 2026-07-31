@@ -90,3 +90,20 @@ ACLARACION: El segundo archivo de jupyter (02_data_cleaning) contiene tanto las 
 Se ha decidido que no se va a introducir ninguna función a este respecto porque no hace falta. Digamos que los dato s son suficientemente limpios como para no teneer que preocuparnos de limpiar, podemos pasar ya directamente al feature enginering. 
 
 ACLARACION: podríamos comnezar ahora un análisis detallado de como se correlacionan los precios, las evouciones temporales y demás pero yo creo que va a ser mejor crearnos los factores y luego hacer ese análisis no sobre precios sino sobre factores. Realmente tiene sentido porque el modelo va a trabajar con conexiones entre factores, no con precios. 
+
+## [31/07/2026] - Feature engineering (03_feature_engineering-ipynb)
+
+### 📝 Notas y decisiones
+
+**Construcción de retornos**
+
+Se ha decidido constuir tanto los retornos simples (que es con lo que vamos a constuir la mayoría de factores) como los retornos logarítmicos (para calcular cosas de volatilidad y otras estadísticas) y los acumulativos (para reconstuir el valor del capital, etc).
+
+ACLARACION: Cada una de las features (y cada tipo de rendimiento calulado) se guarda como un DataFrame independiente, todavía no vamos a intentar unirlos. 
+
+**Construcción de Momentum y Reversión a corto plazo** 
+
+
+
+
+ACLARACION: No olvidarse, cuando ya tengamos todas las features calculadas, empaquetarlas y subirlas con parquet. 

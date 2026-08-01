@@ -91,7 +91,7 @@ Se ha decidido que no se va a introducir ninguna función a este respecto porque
 
 ACLARACION: podríamos comnezar ahora un análisis detallado de como se correlacionan los precios, las evouciones temporales y demás pero yo creo que va a ser mejor crearnos los factores y luego hacer ese análisis no sobre precios sino sobre factores. Realmente tiene sentido porque el modelo va a trabajar con conexiones entre factores, no con precios. 
 
-## [31/07/2026 - 1/07/2026] - Feature engineering (03_feature_engineering-ipynb)
+## [31/07/2026] - Feature engineering (03_feature_engineering-ipynb)
 
 ### 📝 Notas y decisiones
 
@@ -116,14 +116,22 @@ ACLARACION: No olvidarse, cuando ya tengamos todas las features calculadas, empa
 
 AMPLIACION: Ademas de los sanity checks (sería como el nivel 1) podríamos hacer **tests unitarios** (sería el nivel 2, prueba de código automatizada que aísla y verifica que una función o componente individual funcione exactamente como se espera ante una entrada determinada).
 
+## [01/07/2026] - Feature engineering (03_feature_engineering-ipynb)
+
+### 📝 Notas y decisiones
+
 **Construccion de las volatilidades**
 
 ACLARACION: Las cuatro volatilidades se encuentran justificadas en el notebook, pero el por que de utilizar 252 dias en todas las volatilidades y no 21 dias o las dos no. Se supone que la de 21 dias esta bien para hacer pruebas y tal pero no van a ser factores de nuestro modelo definitivo (igualmente como lo guardamos como funciones que admiten una parametrizacion podemos cambiarla cuando sea)
 
-ACLARACION: Tanto la downside como la upside volatility se tiene que calular utilizando un period (que es los días seguidos que tiene que acumular para dar el dato). Hemos puesto 21 días, es decir que, cuando se acumulen 21 días de retornos positivos se da el dato de upside volatility y analogo al downside volatility (esto se hace para quedarnos solamente, a pesar de tener mas NaN porque los reotnros positivos y negativos estan intercalados, con los días de dato sólido y estable). 
+ACLARACION: Tanto la downside como la upside volatility se tiene que calular utilizando un period (que es los días seguidos que tiene que acumular para dar el dato). Hemos puesto 21 días, es decir que, cuando se acumulen 21 días de retornos positivos se da el dato de upside volatility y analogo al downside volatility (esto se hace para quedarnos solamente, a pesar de tener mas NaN porque los reotnros positivos y negativos estan intercalados, con los días de dato sólido y estable). Precisamente le hecho de poner 21 díaas en vez de 252 (que sería el caso del rolling) hace que en el analisis estadistico el count del upside y downside salga mayor que el de rolling. 
 
 AMPLICACION: Podriamos considerar tambien las volatilidades de 21 dias pero tendriamos que simplificar de alguna manera los 8 factores para quedarnos con dos o tres como maximo. 
 
 ACLARACION: Al final nos quedamos con tres volatilidades para alimentar el modelo (la low volaility nanai)
 
-PARA 02/08/2026: plotear el rolling, downside y upside con el precio y un par de verificaciones que estan en el chat gpt de la web. 
+## [02/07/2026] - Feature engineering (03_feature_engineering-ipynb)
+
+### 📝 Notas y decisiones
+
+Tiramos para el liquidity con Amihud

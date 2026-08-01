@@ -91,7 +91,7 @@ Se ha decidido que no se va a introducir ninguna función a este respecto porque
 
 ACLARACION: podríamos comnezar ahora un análisis detallado de como se correlacionan los precios, las evouciones temporales y demás pero yo creo que va a ser mejor crearnos los factores y luego hacer ese análisis no sobre precios sino sobre factores. Realmente tiene sentido porque el modelo va a trabajar con conexiones entre factores, no con precios. 
 
-## [31/07/2026] - Feature engineering (03_feature_engineering-ipynb)
+## [31/07/2026 - 1/07/2026] - Feature engineering (03_feature_engineering-ipynb)
 
 ### 📝 Notas y decisiones
 

@@ -103,7 +103,27 @@ ACLARACION: Cada una de las features (y cada tipo de rendimiento calulado) se gu
 
 **Construcción de Momentum y Reversión a corto plazo** 
 
+En general para todas las features vamos a realizar un **sanity check** que consiste en:
 
+- **Inspección visual**: comparación de la serie temporal de precios de una de las empresas con la evolución del factor. 
+
+- **Conteo de nulos**: comprobar que los nulos duran lo que deben durar y que no hay huecos raros a mitad de la serie histórica. 
+
+- **Comprobacióon de rangos**: con ``df.describe()`` verificamos que no haya valores infinitos, que la media y la mediana tienen sentido y que los valores mínimos y máximos son razonables. 
 
 
 ACLARACION: No olvidarse, cuando ya tengamos todas las features calculadas, empaquetarlas y subirlas con parquet. 
+
+AMPLIACION: Ademas de los sanity checks (sería como el nivel 1) podríamos hacer **tests unitarios** (sería el nivel 2, prueba de código automatizada que aísla y verifica que una función o componente individual funcione exactamente como se espera ante una entrada determinada).
+
+**Construccion de las volatilidades**
+
+ACLARACION: Las cuatro volatilidades se encuentran justificadas en el notebook, pero el por que de utilizar 252 dias en todas las volatilidades y no 21 dias o las dos no. Se supone que la de 21 dias esta bien para hacer pruebas y tal pero no van a ser factores de nuestro modelo definitivo (igualmente como lo guardamos como funciones que admiten una parametrizacion podemos cambiarla cuando sea)
+
+ACLARACION: Tanto la downside como la upside volatility se tiene que calular utilizando un period (que es los días seguidos que tiene que acumular para dar el dato). Hemos puesto 21 días, es decir que, cuando se acumulen 21 días de retornos positivos se da el dato de upside volatility y analogo al downside volatility (esto se hace para quedarnos solamente, a pesar de tener mas NaN porque los reotnros positivos y negativos estan intercalados, con los días de dato sólido y estable). 
+
+AMPLICACION: Podriamos considerar tambien las volatilidades de 21 dias pero tendriamos que simplificar de alguna manera los 8 factores para quedarnos con dos o tres como maximo. 
+
+ACLARACION: Al final nos quedamos con tres volatilidades para alimentar el modelo (la low volaility nanai)
+
+PARA 02/08/2026: plotear el rolling, downside y upside con el precio y un par de verificaciones que estan en el chat gpt de la web. 

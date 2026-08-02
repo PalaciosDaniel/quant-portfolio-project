@@ -91,7 +91,7 @@ Se ha decidido que no se va a introducir ninguna función a este respecto porque
 
 ACLARACION: podríamos comnezar ahora un análisis detallado de como se correlacionan los precios, las evouciones temporales y demás pero yo creo que va a ser mejor crearnos los factores y luego hacer ese análisis no sobre precios sino sobre factores. Realmente tiene sentido porque el modelo va a trabajar con conexiones entre factores, no con precios. 
 
-## [31/07/2026] - Feature engineering (03_feature_engineering-ipynb)
+## [31/07/2026] - Feature engineering (03_feature_engineering.ipynb)
 
 ### 📝 Notas y decisiones
 
@@ -116,7 +116,7 @@ ACLARACION: No olvidarse, cuando ya tengamos todas las features calculadas, empa
 
 AMPLIACION: Ademas de los sanity checks (sería como el nivel 1) podríamos hacer **tests unitarios** (sería el nivel 2, prueba de código automatizada que aísla y verifica que una función o componente individual funcione exactamente como se espera ante una entrada determinada).
 
-## [01/07/2026] - Feature engineering (03_feature_engineering-ipynb)
+## [01/07/2026] - Feature engineering (03_feature_engineering.ipynb)
 
 ### 📝 Notas y decisiones
 
@@ -130,8 +130,36 @@ AMPLICACION: Podriamos considerar tambien las volatilidades de 21 dias pero tend
 
 ACLARACION: Al final nos quedamos con tres volatilidades para alimentar el modelo (la low volaility nanai)
 
-## [02/07/2026] - Feature engineering (03_feature_engineering-ipynb)
+## [02/07/2026] - Feature engineering (03_feature_engineering.ipynb)
 
 ### 📝 Notas y decisiones
 
-Tiramos para el liquidity con Amihud
+DECISIÓN: Para el Amihud se involucra la variable volumen y tenemos que ver que hacer con los nulos. Hemos decidido reemplazar los volúmenes nulos por NaN y perder el dato de ese día. Esto es mejor metodológicamente hablando que reemplazarlo por alguna media de volúmenes y tal porque el hecho de que sea nulo probablemente no sea por un fallo sino por suspensión de cotización o medio festivo. 
+
+ACLARACION: Para el Amihud no se utiliza los retornos logarítmicos sino los simples, ya que en la formula se emplea el valor absoluto del retorno simple diario. 
+
+DECISIÓN: Para obtener el factor de iliquidez con Amihud se deben utilizar los retornos simples. Podemos hacerlo de dos maneras: calular directamente dentro de la función los retornos simples a partir del Adj Close aprovechando que también se lo tenemos que pasar o pasarle por separado el Adj Close y los simple_returns aprovechando que los dos los tenemos en parquet. Nos hemos decidido por la segunda porque precisamente el parquet se pensó para eso, así cada vez que tenemos que darle el input a una funcion ponemos explícitamente el .parquet para traer la lista de precios, log_returns, etc. que necesitemos. 
+
+DECISIÓN: Se ha decidido meter en la función de ``compute_amihud_illiquidity`` un mínimo de observaciones (fijadas a 15) para calcular el valor. Como es un rolling, por defecto cada vez que se encuentre un valor nulo de volumen (que nosotros lo hemos sutituido por un NaN) lo que hace es un ``skipna=True`` calulando ese valor con 20 días en vez de 21. Si esto ocurre muchos días seguidos (volúmenes nulos por suspensión varios días seguidos) podría pasar que esa media se haga entre tan pocos días que no sea estadísticamente representativo. 
+
+ACLARACION: Todas estas features se guardan en data.processed porque son variables que salen de nuestro código, no los descargamos en ingun lado. Que esté en processed es muy diferente a la maniupacion que vamos a tener que hacer para luego darselos de comer al modelo (lo haremos mucho más tarde).
+
+Nos hemos quedado en total con 9 features que hemos guardado en .parquet dentro de data.processed: simple returns, log returns, cumulative returns, 12-1 momentum, short term reversal, rolling volatitlity, upside volatility, downside volatility y amihud illiquidity. 
+
+DECISION: Al final hemos incluido el sanity check y un par de tests mas de los tres tipos de retornos en el notebook del feature engineering. Mas que nada porque como tal no son los factores (de hecho todos los factores que hemos considerado dependen de estos retornos) por lo que tampoco ibamos a meter esta validacion de retornos en el notebook siguiente, que es especifico para validación de factores. 
+
+## [02/07/2026] - Factor Validation (04_factor_validation.ipynb)
+
+### 📝 Notas y decisiones
+
+Una vez tenemos nuestros factores calculados vamos a realizar todo ese análisis que dijimos que nos ibamos a guardar para los factores (en vez de hacerlo sobre los rendimientos), como si fuesemos nosotros mismos el modelo que intenta ver las relaciones existentes. 
+
+ACLARACION: debemos diferenciar entre features y factores. En el parqet tenemos 9 variables pero solamente las 6 (12-1 momentum, short term reversal, rolling volatitlity, upside volatility, downside volatility y amihud illiquidity) son la comida que le daremos al modelo. 
+
+**Diferencia entre variables base/objetivo (Base Variables / Targets) y factores de estilo (Style Factors / Alpha Drivers)**
+
+- Los retornos son la materia prima (o el Target): simple_returns y log_returns son variables financieras base que usas para calcular otros factores (volatilidad, Sharpe, Reversal) o que usas como variable a predecir ($Y$) en tu modelo de Machine Learning (ej. predecir el retorno a $t+21$). 
+
+- Los factores son exposiciones explicativas ($X$): un factor es una característica construida y diseñada para capturar una prima de riesgo o una anomalía de mercado (Momentum, Reversal, Volatilidad, Amihud).
+
+El **objetivo de esta fase** es comprender las propiedades estadísticas, temporales y transversales de los factores construidos, evaluar la calidad de la información que contienen e identificar posibles redundancias antes de utilizarlos en el proceso de modelado y selección de activos. Las tres ideas importantes son: entender los factores, comprobar que aportan información útil y detectar problemas antes del modelo.

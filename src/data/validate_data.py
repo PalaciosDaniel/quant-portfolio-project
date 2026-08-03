@@ -323,9 +323,20 @@ def get_trading_periods_by_ticker(
 
     periods = pd.DataFrame(results).set_index("Ticker")
 
+    full_period = periods[periods["traded_full_period"]].sort_index()
+
+    partial_period = (
+        periods[~periods["traded_full_period"]]
+        .sort_values(
+        "first_trading_date",
+        ascending=False,
+        na_position="last",
+    )
+)
+
     return {
-        "full_period": periods[periods["traded_full_period"]].copy(),
-        "partial_period": periods[~periods["traded_full_period"]].copy(),
+    "full_period": full_period,
+    "partial_period": partial_period,
     }
 
 

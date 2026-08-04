@@ -173,3 +173,9 @@ ACLARACION: Hay que entender bien cómo trabaja Downside y Upside volatility (po
 CUESTION: No se si deberíamos de igualar el día en el que todos los factores comienzan a dar valores distintos de NaN. es decir, ahora el momentum y la rolling comienzan en el 252 pero las otras cuatro comienzan antes. De hecho la movie es que debriamos ver si aun teniendo en cuenta las empresas que mas tarde empeizan a cotizar seguimos teniendo suficientes datos (un año despues de que la ultima empresa se ponga a cotizar) para entrenar el modelo. De hecho tampoco nos tenemos que quedar justo con el periodo en el que las 499 empresas llevan ya un año cotizando ni tampoco tenemos que cargarnos empresas porque lleven poco en el índice, simplemente lo que se puede hacer es que el modelo vaya variando el universo de empresas a medida que va pasando el tiempo (de hecho, esto es imprescindible ya que sino estariamos construyendo un modelo que no se puede actualizar). 
 
 DECISION: Si se decide eliminar algun ticker no se toca ni el df de prices ni de ningun factor posterior calculado. Lo que se hace es ya en el notebook 05 cuando emepcemos con el modelo ahi ya vemos los tickers que eliminamos y creamos las nuevas variables prices_clean, momentum_clean, etc. que se guardaran como otro parquet en data.preprocessed/. Con las fechas limitadas para los factores lo mismo.  
+
+## [04/07/2026] - Factor Validation (04_factor_validation.ipynb)
+
+### 📝 Notas y decisiones
+
+ACLARACION: En el punto 4 Comportamiento Temporal y Estabilidad Cross-Sectional del notebook 04 lo que demostraremos es que los factores no solo funcionan "en promedio" durante todo el histórico, sino que mantienen su capacidad de discriminar entre activos día a día (estabilidad cross-sectional) y cómo reaccionan ante diferentes regímenes de mercado (como crisis o expansiones).

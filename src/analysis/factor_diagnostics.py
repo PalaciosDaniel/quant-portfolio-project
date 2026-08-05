@@ -87,3 +87,22 @@ def factor_coverage_since_first_valid(df, total_companies=499):
             available_mask.loc[first_valid_date:, ticker] = True
 
     return available_mask.sum(axis=1) / total_companies * 100
+
+
+def compute_forward_returns(prices, horizon):
+    """
+    Compute forward simple returns over a given prediction horizon.
+
+    Parameters
+    ----------
+    prices : pd.DataFrame
+        Adjusted close prices (Date × Assets).
+    horizon : int
+        Number of trading days ahead.
+
+    Returns
+    -------
+    pd.DataFrame
+        Forward returns aligned at time t.
+    """
+    return prices.shift(-horizon) / prices - 1

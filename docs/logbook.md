@@ -116,7 +116,7 @@ ACLARACION: No olvidarse, cuando ya tengamos todas las features calculadas, empa
 
 AMPLIACION: Ademas de los sanity checks (sería como el nivel 1) podríamos hacer **tests unitarios** (sería el nivel 2, prueba de código automatizada que aísla y verifica que una función o componente individual funcione exactamente como se espera ante una entrada determinada).
 
-## [01/07/2026] - Feature engineering (03_feature_engineering.ipynb)
+## [01/08/2026] - Feature engineering (03_feature_engineering.ipynb)
 
 ### 📝 Notas y decisiones
 
@@ -130,7 +130,7 @@ AMPLICACION: Podriamos considerar tambien las volatilidades de 21 dias pero tend
 
 ACLARACION: Al final nos quedamos con tres volatilidades para alimentar el modelo (la low volaility nanai)
 
-## [02/07/2026] - Feature engineering (03_feature_engineering.ipynb)
+## [02/08/2026] - Feature engineering (03_feature_engineering.ipynb)
 
 ### 📝 Notas y decisiones
 
@@ -148,7 +148,7 @@ Nos hemos quedado en total con 9 features que hemos guardado en .parquet dentro 
 
 DECISION: Al final hemos incluido el sanity check y un par de tests mas de los tres tipos de retornos en el notebook del feature engineering. Mas que nada porque como tal no son los factores (de hecho todos los factores que hemos considerado dependen de estos retornos) por lo que tampoco ibamos a meter esta validacion de retornos en el notebook siguiente, que es especifico para validación de factores. 
 
-## [02/07/2026] - Factor Validation (04_factor_validation.ipynb)
+## [02/08/2026] - Factor Validation (04_factor_validation.ipynb)
 
 ### 📝 Notas y decisiones
 
@@ -166,7 +166,7 @@ El **objetivo de esta fase** es comprender las propiedades estadísticas, tempor
 
 ACLARACION: Hay que entender bien cómo trabaja Downside y Upside volatility (pongamos de ejemplo la Upside). Lo que hace es filtrar los dias en que los retornos son positivos y va a trabajar con una ventana de 252 días con un mínimo de 21 días válidos. Es decir, la función mira hacia atrás en el tiempo a un periodo de 252 días y extrae los "días válidos", si estos son menos que 21, la función devuelve NaN para ese día y si son mas, calcula la volatilidad teniendo en cuenta todos los días válidos. Si por ejemplo estamos ya por el día 500, la función solo mira los últimos 252 días y hace lo mismo. La cosa es que normalmente se calula esta funcion estableciendo el min period sobre el total de la serie, no solo sobre los precios válidos, es decir, min periods=21 se asegura de que al menos 21 valores son distintos de NaN (le da igual que correspondan a retornos negativos o positivos). Es por eso que nosotros en las dos funciones hemos tranformado los retornos del signo que no estamos utilizando en valores NaN para que el min periods solo actue sobre la parte que tiene que actuar.
 
-## [03/07/2026] - Factor Validation (04_factor_validation.ipynb)
+## [03/08/2026] - Factor Validation (04_factor_validation.ipynb)
 
 ### 📝 Notas y decisiones
 
@@ -174,8 +174,88 @@ CUESTION: No se si deberíamos de igualar el día en el que todos los factores c
 
 DECISION: Si se decide eliminar algun ticker no se toca ni el df de prices ni de ningun factor posterior calculado. Lo que se hace es ya en el notebook 05 cuando emepcemos con el modelo ahi ya vemos los tickers que eliminamos y creamos las nuevas variables prices_clean, momentum_clean, etc. que se guardaran como otro parquet en data.preprocessed/. Con las fechas limitadas para los factores lo mismo.  
 
-## [04/07/2026] - Factor Validation (04_factor_validation.ipynb)
+## [04/08/2026] - Factor Validation (04_factor_validation.ipynb)
 
 ### 📝 Notas y decisiones
 
 ACLARACION: En el punto 4 Comportamiento Temporal y Estabilidad Cross-Sectional del notebook 04 lo que demostraremos es que los factores no solo funcionan "en promedio" durante todo el histórico, sino que mantienen su capacidad de discriminar entre activos día a día (estabilidad cross-sectional) y cómo reaccionan ante diferentes regímenes de mercado (como crisis o expansiones).
+
+## [05/08/2026] - Factor Validation (04_factor_validation.ipynb)
+
+### 📝 Notas y decisiones
+
+**Cosillas sobre el análisis cross-sectional de los factores**
+
+Lo que vamos a hacer es en lugar de mirar la serie de una sola empresa, cada día coges a las 500 empresas, miras el valor de un factor y calculas una sola cifra para todo el mercado ese día. Haces eso día a día y lo representas en una línea temporal. 
+
+1. **Media vs. Mediana en el tiempo**: la media es el promedio habitual y la mediana es la empresa que se queda justo en el centro (el 50%). Si un factor tiene una media de $10\%$ pero una mediana de $2\%$, significa que la gran mayoría de las empresas rinden poco ($2\%$) y solo 3 o 4 gigantes inflan la media hasta el $10\%$. El peligro es que si tú construyes una estrategia de inversión pensando que la "media" del mercado es $10\%$, te vas a estrellar porque la empresa típica solo rinde el $2\%$.
+
+Nuestro objetivo es ver si la media vive permanentemente por encima de la mediana a lo largo de los años, lo que confirmaría que la asimetría es una regla del mercado, no un accidente puntual. Esto significaría que para capturar esa media tan alta, nuestra estrategia cuantitiativa necesita identificar de forma muy fina las pocas acciones de la cola derecha (los outliers alcistas), porque si compras una acción al azar en el centro de la distribución, nos quedaríamos en la mediana (que es más baja).
+
+2. **Dispersión: Rango Intercuartílico - IQR**: es la distancia entre el percentil 75 ($Q3$) y el percentil 25 ($Q1$), es decir, la separación entre las empresas "buenas" y las empresas "malas" ese día (si el Q75 es el deseable o es el Q25 dependerá del factor, lo que mide el IQR es la capacidad de discriminar). Si el IQR es grande (la linea es alta) hay mucha diferencia entre las empresas del top 25% y las del bottom 25% (el factor funciona porque permite diferenciar claramente unas de otras) pero si el IQR colapsa (la linea es más alta cuanta más separación haya entre quartiles y se va a cero si no hay diferencia) significa que todas las 500 empresas tienen casi el mismo valor del factor ese día por lo que el factor se ha quedado "ciego" y no te sirve para construir una cartera ese mes.
+
+3. **Coeficiente de Variación ($\text{CV}$) y Dispersión Absoluta ($\sigma_t$ vs. $\text{IQR}_t$)**: el Coeficiente de Variación ($\text{CV} = \frac{\sigma_t}{\vert{}\mu_t\vert{}}$) busca evaluar la variabilidad relativa del factor; es decir, determinar si el aumento en la dispersión entre empresas responde a un mayor poder discriminatorio del factor o si es un mero reflejo de un entorno de mercado globalmente más volátil (como en periodos de crisis).
+
+Nota técnica metodológica: En factores financieros cuyos rendimientos orbitan cerca de cero (como Momentum o Reversal), la media transversal ($\mu_t$) se aproxima frecuentemente a cero. Esto provoca una inestabilidad matemática en la fórmula (división por valores insignificantes) que genera picos artificiales en la serie. Por ello, se complementa la evaluación analizando de forma directa la Desviación Estándar transversal ($\sigma_t$) junto al Rango Intercuartílico ($\text{IQR}_t$), permitiendo constatar la estabilidad de la dispersión tanto en su versión paramétrica como no paramétrica sin introducir distorsiones en el denominador.
+
+La interpretación del comportamiento conjunto de la Desviación Estándar ($\sigma_t$) y el Rango Intercuartílico ($\text{IQR}_t$) en el gráfico se resume en tres escenarios clave:
+
+- Movimiento conjunto de $\sigma_t$ e $\text{IQR}_t$: Indica una dispersión uniforme en todo el mercado. La amplitud de la distribución se estrecha o se ensancha de manera homogénea entre todos los activos.
+
+- Pico aislado en $\sigma_t$ mientras el $\text{IQR}_t$ se mantiene estable: Denota un efecto outlier. La dispersión paramétrica se dispara por la presencia puntual de dos o tres acciones con valores extremadamente atípicos en las colas, y no por un cambio generalizado en la mayoría del panel.
+
+En resumen, queremos responder:  
+
+- ¿La asimetría del factor es una propiedad constante del mercado o un espejismo temporal?
+
+- ¿El factor sigue diferenciando entre empresas buenas y malas todos los días o se queda "muerto/ciego" en algunas épocas?
+
+- ¿El factor se comporta de forma estable en años tranquilos y explota de forma predecible durante las crisis?
+
+CUESTION: se ha observado una Amihud Illiquidity con tendencia bajista en los últimos 15 años debido al cambio de caracterísitcas del mercado. Deberiamos de ajustarla para poder comparar la Amihud de 2011 con la de 2014, creo que este ajuste tiene que ver con el z-score. 
+
+**Sobre el punto 5 del notebook 04: persistencia y memoria temporal**
+
+ACLARACION: cuando calulamos aquí el IQR mide la variación de la memoria temporal entre acciones. Queremos que sea BAJO porque indica que el factor se comporta de forma estable y predecible en todo el panel (la persistencia del factor es idéntica en casi todas las empresas del mercado, tanto para una empresa gigante como para una pequeña, la memoria temporal de su factor es prácticamente la misma). En el punto 4 estábamos midiendo la dispersión entre acciones, en este caso queremos que sea ALTO para poder clasificar (ranking).
+
+DECISION: la correlacion que vamos a utilizar para calular lo de la correlacion cross sectional (como a medida que van pasando los lags, la serie se va pareciendo menos a la original) va a ser la de Spearman que mide el parecido en el orden en que las ordenas según el factor (rank). La de Pearson no renta mas que nada porque queremos que el modelo prediga ranking no valores concretos y adrmas porque es mucho más sensible a outliers y cambios de escala (sería muchi menos robusto). 
+
+**Sobre el punto 6 del notebook 04: redundancia y multicolinealidad**
+
+ACLARACION: la matriz de correlación cross-sectional mide la relación entre factores distintos en el mismo momento del tiempo, que no es lo mismo que medir la correlación en el tiempo de un mismo factor contra sí mismo (punto 5). En el punto 6 lo que queremos saber es si va a haber Redundancia Multivariada (sería responder a preguntas tipo ¿El ranking de Volatilidad Total de Apple hoy me está diciendo EXACTAMENTE LO MISMO que su ranking de Downside Volatility o su Iliquidez hoy?). 
+
+ACLARACION: En este caso seguimos usando Spearman por las mismas razones. 
+
+ACLARACION: Cuando hablamos del **dendrograma** lo que hacemos es convertir correlaciones de Spearman en distancias (si la correlacion es 0.90 la distancia es 0.10, muy cerquita) y vamos agrupando los factores según a que distancia estén unos de otros. Primero agrupas dos, luego esos dos con el siguiente, luego esos tres con el siguiente y al final te sale un arbol donde cuanto mas cerca esten dos ramas (o mas uniones entre ramas tengas que pasar) mas correlacion tienen.
+
+ACLARACION: El VIF por otro lado mide cuánto puede explicarse un factor utilizando una combinación lineal de los demás factores (la matriz de correlaciones te da relaciones dos a dos, esto es todo a la vez). Lo que se hace es ajustar una regresion y se obtiene un coeficiente de determinación $R^2_j$ y el VIF se define como $VIF_j = \frac{1}{1-R^2_j}$. Si es cercano a uno entocnes ese factor aporta mucha información distinta de la que aporta el resto de factores (aporta una nueva dirección) y si es mucho mayor que uno ($VIF = 20$) entocnes ese factor no aporta apenas información nueva. 
+
+CUESTION: Deberiamos de tener claro de todas las listas de correlaciones, matrices etc del notebook 04 cuales queremos guardar en el parquet. 
+
+**Sobre el punto 7 del notebook 04: Preliminary Predictive Power**
+
+ACLARACION: El Information Coefficient (IC) mide en una escala de -1 a +1 la capacidad de un factor cuantitativo para ordenar hoy los activos según la rentabilidad que tendrán en el futurO (a 21 días en nuestro caso). 
+
+ACLARACION: conceptos importantes que se van a manejar. 
+
+- **Mean IC**: La capacidad predictiva promedio del factor a lo largo de todo el periodo histórico.
+
+- **Median IC**: La capacidad predictiva típica del factor, protegida de días con shocks o eventos extremos.
+
+- **Std IC**: La variabilidad o volatilidad de la capacidad predictiva del factor día a día.
+
+- **ICIR (Information Ratio del IC)**: La consistencia ajustada al riesgo del factor, calculada dividiendo la media del IC entre su desviación estándar.
+
+- **% IC > 0**: El porcentaje de días en los que el factor acertó en la dirección de la rentabilidad futura.
+
+- **t-stat**: La medida cuantitativa de cuántas desviaciones estándar se aleja el IC medio de cero para evaluar su significación.
+
+- **p-value**: La probabilidad de que la capacidad predictiva de tu factor sea producto de la mera casualidad.
+
+CUESTION: Probablemente en algun moemnto parte del codigo del notebook se pueda implementar como funciones que importas desde otros .py asi que si tenemos la opcion de crear ya la funcion mejor. 
+
+## [05/08/2026] - Factor preprocessing (05_factor_preprocessing.ipynb)
+
+ACLARACION: dentro de data/preprocessed vamos a meter todos los .parquet de los factores ya listos para usar, retornos, retornos en el futuro, prices, etc. El forward return a 21 días solo lo metemos si lo utilizamos. 
+
+DECISION: cuando acabemos el notebook 05 podriamos  generar un pequeño fichero de metadatos tipo JSON donde meter los cambios que se han hecho para pasar de los factores sucios a los factores ya preproocessed (aqui meteriamos las fechas utilizadas, el z score, los tickers eliminados, etc). Este JSON lo guardariamos dentro de data/preprocessed junto a los parquet. limpios. 

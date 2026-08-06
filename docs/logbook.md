@@ -259,3 +259,5 @@ CUESTION: Probablemente en algun moemnto parte del codigo del notebook se pueda 
 ACLARACION: dentro de data/preprocessed vamos a meter todos los .parquet de los factores ya listos para usar, retornos, retornos en el futuro, prices, etc. El forward return a 21 días solo lo metemos si lo utilizamos. 
 
 DECISION: cuando acabemos el notebook 05 podriamos  generar un pequeño fichero de metadatos tipo JSON donde meter los cambios que se han hecho para pasar de los factores sucios a los factores ya preproocessed (aqui meteriamos las fechas utilizadas, el z score, los tickers eliminados, etc). Este JSON lo guardariamos dentro de data/preprocessed junto a los parquet. limpios. 
+
+DECICISON: una vez aplicado el winsorization puede ser buena contruir las dos alternativas: z score o rank percetil. Mas que nada porque hemos contruido el z score pero para modelos tipo XGBoost es mejor el rank percentil. 

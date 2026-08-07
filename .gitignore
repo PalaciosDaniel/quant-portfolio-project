@@ -1,0 +1,31 @@
+# Virtual environments
+venv/
+.venv/
+env/
+
+# VS Code
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data
+data/raw/
+data/processed/
+data/preprocessed/
+*.parquet
+
+# Keep folder structure
+!data/**/.gitkeep
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db

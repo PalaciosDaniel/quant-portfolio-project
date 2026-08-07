@@ -90,3 +90,63 @@ def standardize_cross_sectional(df, cols):
         df_out[f"{col}_z"] = (df_out[col] - mean_t) / std_t
 
     return df_out
+
+
+def rank_cross_sectional(df, cols):
+    """
+    Apply cross-sectional percentile ranking by date.
+
+    For each trading day, factor values are converted into percentile ranks
+    and centered around zero by subtracting 0.5.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input DataFrame containing a 'date' column or index and factor columns.
+    cols : list of str
+        Factor columns to rank.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Copy of the input DataFrame with ranked columns ('<factor>_rank').
+    """
+    df_out = df.copy()
+
+    # Ensure 'date' is accessible whether it is in columns or in the index
+    grouped = (
+        df_out.groupby("date")
+        if "date" in df_out.columns
+        else df_out.groupby(level="date")
+    )
+
+    for col in cols:
+
+        # Compute daily cross-sectional percentile rank
+        rank_t = grouped[col].rank(method="average", pct=True)
+
+        # Center the percentile rank around zero
+        df_out[f"{col}_rank"] = rank_t - 0.5
+
+    return df_out
+
+
+def compute_forward_return(prices, horizon=21):
+    """
+    Compute forward returns from adjusted close prices.
+
+    Parameters
+    ----------
+    prices : pandas.DataFrame
+        DataFrame containing adjusted close prices.
+        Rows correspond to dates and columns to tickers.
+    horizon : int, default=21
+        Forward return horizon in trading days.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Forward returns with the same shape as the input.
+    """
+
+    return prices.pct_change(horizon).shift(-horizon)

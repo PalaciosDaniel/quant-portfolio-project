@@ -256,8 +256,76 @@ CUESTION: Probablemente en algun moemnto parte del codigo del notebook se pueda 
 
 ## [05/08/2026] - Factor preprocessing (05_factor_preprocessing.ipynb)
 
-ACLARACION: dentro de data/preprocessed vamos a meter todos los .parquet de los factores ya listos para usar, retornos, retornos en el futuro, prices, etc. El forward return a 21 días solo lo metemos si lo utilizamos. 
+### 📝 Notas y decisiones
 
-DECISION: cuando acabemos el notebook 05 podriamos  generar un pequeño fichero de metadatos tipo JSON donde meter los cambios que se han hecho para pasar de los factores sucios a los factores ya preproocessed (aqui meteriamos las fechas utilizadas, el z score, los tickers eliminados, etc). Este JSON lo guardariamos dentro de data/preprocessed junto a los parquet. limpios. 
+ACLARACION: al final hemos metido en data/preprocessed los dos df que cotnienen los tres factores y los forwar returns bien limpitos en el formato correcto (diferente al original). 
 
 DECICISON: una vez aplicado el winsorization puede ser buena contruir las dos alternativas: z score o rank percetil. Mas que nada porque hemos contruido el z score pero para modelos tipo XGBoost es mejor el rank percentil. 
+
+## [06/08/2026] - Factor preprocessing (05_factor_preprocessing.ipynb)
+
+### 📝 Notas y decisiones
+
+ACLARACION: el forward return del día uno nos da la rentabilidad real que el activo generará en los siguientes 21 días laborables a partir de esa primera fecha. Literalmente mira el futuro, por eso es nuestro target. 
+
+DECISION: Cosas que deberiamso hacer antes de empezar el notebook 06 y que desde luego por ahora no vamos a hacer. 
+
+- Revisar que todos los notebooks tienen una estructura homogénea. 
+
+- Comprobar que los .py asociados contienen las funciones reutilizables y que los notebooks solo orquestan el flujo.
+
+- Actualizar el README con el estado actual del pipeline.
+
+## [06/08/2026] - Factor modeling (06_factor_modeling.ipynb)
+
+### 📝 Notas y decisiones
+
+ACLARACION: Una vez tenemos los data sets subidos, a la hora de limpiarlos hacemos el dropna(). Esto no significa que nos carguemos ese día para todas las empresas sino que si una empresa tiene un NaN en un dia concreto, ese día el universo de activos se restringe para no tener en cuenta esa empresa (todas las demás, las que no tienen NaN siguen igual). Por otro lado, sí que vamos a tener que quitar los últimos 21 días de cotización (que caen en diciembre de 2024) porque no tenemos forward returns esos días por lo que no tendríamos un target al que apuntar. 
+
+## [07/08/2026] - Factor modeling (06_factor_modeling.ipynb)
+
+### 📝 Notas y decisiones
+
+ACLARACION: De las mega matrices que contruimos en el notebok 05 y que cargamos en el notebook 06 nada mas empezar, que contienen toda la info de los factores y de los returns ``df_final_z`` y ``df_final_rank`` extraemos las tres columas de factores ya winsorizados y rankeados o rank percentileados: ``FEATURES_Z`` y ``FEATURES_RANK``. También extraemos el TARGET (columna de forward_returns_21d). 
+
+Luego volvemos a juntar esos tres factores  y el target, nos cargamos todos los valores NaN y nos aseguramos de que compartan indice y así contruimos: ``df_clean_z`` y ``df_clean_rank``. Luego ya extraemos de las matrices limpitas los tres factores que serán  ``X_z`` y ``X_rank`` y los dos targets ``y_rank`` y ``y_z`` (que son idénticos). Esos X e y son los que luego spliteas en partes de validación y de train. 
+
+ACLARACION: Para el punto 4.3 la primera tabla muestra los 7 bloques sin meter nada de la purga y el embargo (estas se meten para un fold especifico, de las 21 combinaciones que tenemos). La segunda tabla muestra una ejemlificacion digamos donde nos muestra: 
+
+- **Total Observations**: número total de observaciones disponibles en el dataset.
+
+- **Avg Train / Fold**: número medio de observaciones que realmente quedan para entrenar después de aplicar Purge y Embargo en un fold.
+
+- **Avg Validation / Fold**: tamaño medio del conjunto de validación.
+
+- **Effective Sample Reduction (%)**: porcentaje medio de observaciones que quedan excluidas en cada fold debido a las ventanas de Purga y Embargo.
+
+EXPLICACION: En el punto 5 vamos a construir las métricas que vamos a utilizar (que guardaremos en metrics.py) para evaluar como de lejos se quedan los modelos de predecir los retornos futuros (las del 5.1 van a mirar la prediccion de los rendimientos tal cual y las del 5.2 la prediccion del ranking, que es realmente la que nos interesa). Algunas métricas importantes van a ser: 
+
+- **RMSE (Root Mean Squared Error)**: Es la métrica principal de optimización. Lo que hace es elevar los errores al cuadrado antes de promediar, por lo que penaliza severamente los errores grandes. En gestión de carteras, equivocarte por mucho en la rentabilidad de un activo durante un evento de alta volatilidad (ej. un earnings shock o un evento macro) tiene un coste asimétrico de riesgo. El RMSE mide qué tan expuesto está el modelo a estas "pifias" graves.
+
+- **MAE (Mean Absolute Error)**: Es una métrica de robustez y sesgo medio ya que trata todos los errores de forma lineal, sin magnificar los valores atípicos (outliers). Te da la desviación típica esperada del modelo en un día "normal" de mercado. La diferencia entre el RMSE y el MAE te dirá qué tan contaminada está la predicción por eventos extremos.
+
+- **Rank IC (Spearman Rank Correlation)**: Es la métrica reina en la industria cuantitativa porque mide la correlación de rango de Spearman diaria entre la predicción del modelo ($\hat{y}$) y el retorno real ($y$) de todo el universo de acciones. Al ser por rangos, es totalmente inmune a los outliers del mercado (un Rank IC positivo consistente significa que el modelo sabe poner en el Top 10% las acciones que realmente van a subir más). 
+
+- **Information Coefficient (IC - Pearson Correlation)**: Mide la correlación lineal estándar de Pearson y se utiliza para comparar con el Rank IC; si el IC difiere mucho del Rank IC, indica que la predicción está demasiado influenciada por valores extremos en la distribución de factores.
+
+- **Information Ratio del IC ($IR_{IC}$)**: Mide la estabilidad temporal del alfa generado y se calcula como el promedio del IC diario dividido por su desviación típica:
+
+$$\text{Information Ratio (IC)} = \frac{\mu(\text{IC}_t)}{\sigma(\text{IC}_t)}$$
+
+En otras palabras, no queremos un modelo que tenga un IC muy alto en 2015 pero que el resto de años sea cero o negativo. Buscamos un $IR_{IC} > 0.5$ (excelente en la industria si supera $1.0$).
+
+COMPROBACION: Cuidado con no perder de vista las funciones que vamos creando para separar en bloques la validation y train (la clase y la función split guardados en utils.py) o para evaluar los modelos (guardadas en metrics.py) porque luego vamos a necesitar llamarlas. Simplemente ahora las hemos creado para poder utilizarlas luego. 
+
+ACLARACION: Cuando hablamos del punto 5.3 Construcción del Evaluador Modular básicamente es constuir una funcion para tener todos los examenes que quieres que tu modelo pase en una sola funcion, para que asi directamente te devuelva un data frame con todas las "notas" que ha sacado tu modelo. 
+
+DECISION: En metrics vamos a meter todas las funciones destinadas a evaluar los modelos. Pero, el examen final que orquesta todo (el que implementamos en el 5.3) deberia ir en evaluation.py que sería el archivo donde guardamos las mega funciones que evaluan modelos (no que implementan los "examanes" sino las que corren varios a la vez y te dan las notas). 
+
+ACLARACION: En el punto 6.1 Generic Training Function la funcion ``run_cpcv_training`` que guardamos en models/training.py básicamente se encarga evaluar un modelo que ya tiene una combinación de hiperparámetros fija. Entrena sobre los 21 folds y te da las "notas finales" del examen. Sería una manera de reusar siempre un mismo plano para los diferentes arquitectos (modelos). 
+
+ACLARACION: Por otro lado la funcion ``optimize_hyperparameters`` (Sección 6.2) busca cuál es la combinación perfecta de hiperparámetros antes de hacer ese examen final. Pruebas decenas de combinaciones distintas sobre una muestra reducida para encontrar la ganadora.
+
+ACLARACION: En training.py le metes las funciones para entrenar los modelos y en tuning.py las encargadas de afinar los hiperparametros. 
+
+DECISION A FUTURO: Estaria bien en algun momento justificar como hemos hecho la funcion que optimiza los hiperparametros, el fundamento teorico la verdad qe ahora mismo no lo tengo nada claro: no necesitas dedicarle dos páginas a la matemática de Optuna, pero sí es importante dejar claro por qué usas TPE (Tree-structured Parzen Estimator) en lugar de una búsqueda por malla (Grid Search) o aleatoria (Random Search).

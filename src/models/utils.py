@@ -206,3 +206,37 @@ class CombinatorialPurgedCV:
             yield train_idx, val_idx
 
 
+# =============================================================================
+# Results Formatting
+# =============================================================================
+
+def print_metrics(metrics: dict) -> None:
+    """Print evaluation metrics in a clean and standardized format."""
+
+    for metric, value in metrics.items():
+
+        if "Hit Rate" in metric:
+            print(f"{metric:<30} {value:>8.2f}%")
+
+        else:
+            print(f"{metric:<30} {value:>8.4f}")
+
+
+def extract_mean_metrics(metrics):
+    """
+    Extract mean metric values from either:
+    - a DataFrame with 'mean' and 'std' rows
+    - a dictionary with scalar metric values
+    """
+
+    if isinstance(metrics, pd.DataFrame):
+        return metrics.loc["mean"].to_dict()
+
+    elif isinstance(metrics, dict):
+        return metrics
+
+    else:
+        raise TypeError(
+            f"Unsupported metrics type: {type(metrics)}"
+        )
+

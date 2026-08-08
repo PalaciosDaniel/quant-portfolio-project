@@ -4,9 +4,9 @@ import numpy as np
 import optuna
 import pandas as pd
 from sklearn.base import RegressorMixin
+from typing import Literal
 
 from .training import run_cpcv_training
-
 
 # =============================================================================
 # Hyperparameter Optimization Pipeline
@@ -19,7 +19,7 @@ def optimize_hyperparameters(
     y: pd.Series,
     splits: list[tuple[np.ndarray, np.ndarray]],
     n_trials: int = 50,
-    rank_method: str = "spearman",
+    rank_method: Literal["pearson", "spearman"] = "spearman",
     scoring_metric: str = "Rank IC Mean",
     direction: str = "maximize",
     random_state: int = 42,
@@ -102,7 +102,7 @@ def optimize_hyperparameters(
             rank_method=rank_method,
         )
 
-        score = aggregated_metrics.loc["mean", scoring_metric]
+        score = aggregated_metrics[scoring_metric]
 
         return score
 

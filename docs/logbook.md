@@ -316,6 +316,10 @@ $$\text{Information Ratio (IC)} = \frac{\mu(\text{IC}_t)}{\sigma(\text{IC}_t)}$$
 
 En otras palabras, no queremos un modelo que tenga un IC muy alto en 2015 pero que el resto de años sea cero o negativo. Buscamos un $IR_{IC} > 0.5$ (excelente en la industria si supera $1.0$).
 
+- **Hit Rate**: porcentaje de días en los que el IC es positivo.
+
+- **t-stat**: evidencia estadística de que el IC medio es distinto de cero.
+
 COMPROBACION: Cuidado con no perder de vista las funciones que vamos creando para separar en bloques la validation y train (la clase y la función split guardados en utils.py) o para evaluar los modelos (guardadas en metrics.py) porque luego vamos a necesitar llamarlas. Simplemente ahora las hemos creado para poder utilizarlas luego. 
 
 ACLARACION: Cuando hablamos del punto 5.3 Construcción del Evaluador Modular básicamente es constuir una funcion para tener todos los examenes que quieres que tu modelo pase en una sola funcion, para que asi directamente te devuelva un data frame con todas las "notas" que ha sacado tu modelo. 
@@ -328,4 +332,12 @@ ACLARACION: Por otro lado la funcion ``optimize_hyperparameters`` (Sección 6.2)
 
 ACLARACION: En training.py le metes las funciones para entrenar los modelos y en tuning.py las encargadas de afinar los hiperparametros. 
 
+## [08/08/2026] - Factor modeling (06_factor_modeling.ipynb)
+
+### 📝 Notas y decisiones
+
 DECISION A FUTURO: Estaria bien en algun momento justificar como hemos hecho la funcion que optimiza los hiperparametros, el fundamento teorico la verdad qe ahora mismo no lo tengo nada claro: no necesitas dedicarle dos páginas a la matemática de Optuna, pero sí es importante dejar claro por qué usas TPE (Tree-structured Parzen Estimator) en lugar de una búsqueda por malla (Grid Search) o aleatoria (Random Search).
+
+ACLARACION: Al finan en el punto 6 hemos decidido entrenar todos los modelos con los hiperparametros by default (tambien hemos metido, aparte del baseline Linear regression pura, la Ridge regression) para ver que tal lo hacen los modelos "puros". Luego ya elegimos a los mejores y ya metemos la parte de optimizacion de hiperparametros (en el punto 8). 
+
+DECISION: Se ha manipulado la funcion run_cpcv_training ( y se ha aadidio otra antes) del training.py para adaptarla a la CPU del ordenador (ahora esa funcion ejecuta hasta 4 folds CPCV simultáneamente) y luego cada Random Forest utiliza un solo hilo. Esto se ha hecho porque Random Forest tardaba una eternidad en runear (mas de 9 minutos) pero puede ser una decision muy especifica de mi ordenador, es decir, en algun momento hay que aclarar que esto es un caso personal y a llo mejor deberiamos de generalizar. 

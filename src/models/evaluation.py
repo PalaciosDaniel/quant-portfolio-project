@@ -7,6 +7,7 @@ into a unified scoring interface.
 
 import pandas as pd
 import numpy as np
+import shap
 
 from .metrics.error_metrics import compute_error_metrics
 from .metrics.ranking_metrics import compute_ic_metrics
@@ -218,3 +219,114 @@ def extract_cpcv_feature_importance(
     df_importance = pd.DataFrame(fold_importances)
 
     return df_importance
+
+
+# =============================================================================
+# SHAP Analysis — CPCV Validation
+# =============================================================================
+
+def compute_cpcv_shap(
+    model_cls,
+    model_params,
+    X,
+    y,
+    splits,
+    sample_size=3000,
+    random_state=42,
+):
+    """
+    Compute SHAP values on sampled validation observations
+    across CPCV folds.
+
+    SHAP is used as a diagnostic interpretability tool rather
+    than as a performance evaluation. Therefore, a reduced
+    CPCV split set and validation subsampling are used to
+    control computational cost.
+    """
+
+    rng = np.random.default_rng(random_state)
+
+    shap_results = []
+
+    # =========================================================================
+    # CPCV folds
+    # =========================================================================
+
+    for fold_idx, (train_idx, val_idx) in enumerate(
+        splits,
+        start=1,
+    ):
+
+        # ---------------------------------------------------------------------
+        # Training and validation data
+        # ---------------------------------------------------------------------
+
+        X_train = X.iloc[train_idx]
+        y_train = y.iloc[train_idx]
+
+        X_val = X.iloc[val_idx]
+
+        # ---------------------------------------------------------------------
+        # Sample validation observations
+        # ---------------------------------------------------------------------
+
+        n_sample = min(
+            sample_size,
+            len(X_val),
+        )
+
+        selected_idx = rng.choice(
+            len(X_val),
+            size=n_sample,
+            replace=False,
+        )
+
+        X_val_sample = X_val.iloc[selected_idx]
+
+        # ---------------------------------------------------------------------
+        # Train model
+        # ---------------------------------------------------------------------
+
+        model = model_cls(**model_params)
+
+        model.fit(
+            X_train,
+            y_train,
+        )
+
+        # ---------------------------------------------------------------------
+        # Tree SHAP
+        # ---------------------------------------------------------------------
+
+        explainer = shap.TreeExplainer(
+            model
+        )
+
+        shap_values = explainer.shap_values(X_val_sample.values)
+
+        # ---------------------------------------------------------------------
+        # Store SHAP values
+        # ---------------------------------------------------------------------
+
+        df_shap_fold = pd.DataFrame(
+            shap_values,
+            columns=X.columns,
+            index=X_val_sample.index,
+        )
+
+        df_shap_fold["fold"] = fold_idx
+
+        shap_results.append(
+            df_shap_fold
+        )
+
+    # =========================================================================
+    # Combine folds
+    # =========================================================================
+
+    df_shap = pd.concat(
+        shap_results,
+        axis=0,
+    )
+
+    return df_shap

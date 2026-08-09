@@ -6,7 +6,7 @@ import pandas as pd
 from sklearn.base import RegressorMixin
 from typing import Literal
 
-from .training import run_cpcv_training
+from src.models.training import run_cpcv_training, evaluate_predictions
 
 # =============================================================================
 # Hyperparameter Optimization Pipeline

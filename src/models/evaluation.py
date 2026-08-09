@@ -6,6 +6,7 @@ into a unified scoring interface.
 """
 
 import pandas as pd
+import numpy as np
 
 from .metrics.error_metrics import compute_error_metrics
 from .metrics.ranking_metrics import compute_ic_metrics
@@ -93,3 +94,127 @@ def evaluate_predictions(
     results.update(ranking_metrics)
 
     return results
+
+
+# =============================================================================
+# Feature Importance Extraction
+# =============================================================================
+
+def extract_cpcv_feature_importance(
+    model_cls,
+    model_params,
+    X,
+    y,
+    splits,
+):
+    """
+    Extract model-specific feature importance across Combinatorial Purged
+    Cross-Validation (CPCV) folds.
+
+    Supported model types:
+    - Linear Models (e.g., Ridge): Absolute magnitude of model coefficients.
+    - XGBoost: Gain-based feature importance.
+    - Tree Ensembles (e.g., Random Forest): Impurity-based feature importance.
+
+    Parameters
+    ----------
+    model_cls : class
+        Model class to be instantiated for each fold (e.g., Ridge, XGBRegressor).
+    model_params : dict
+        Dictionary containing optimal hyperparameters for the model class.
+    X : pd.DataFrame
+        Predictor features matrix.
+    y : pd.Series or pd.DataFrame
+        Target variable vector.
+    splits : iterable of tuples
+        CPCV splits yielding (train_indices, validation_indices) for each fold.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing normalized feature importance percentages (0-100%)
+        for every feature across all CPCV folds.
+    """
+
+    fold_importances = []
+
+    # =========================================================================
+    # Process each CPCV fold
+    # =========================================================================
+
+    for fold_idx, (train_idx, val_idx) in enumerate(splits, start=1):
+
+        # ---------------------------------------------------------------------
+        # Slice training data for the current fold
+        # ---------------------------------------------------------------------
+
+        X_train = X.iloc[train_idx]
+        y_train = y.iloc[train_idx]
+
+        # ---------------------------------------------------------------------
+        # Instantiate and fit model instance
+        # ---------------------------------------------------------------------
+
+        model = model_cls(**model_params)
+        model.fit(X_train, y_train)
+
+        # ---------------------------------------------------------------------
+        # Extract raw feature importance based on model architecture
+        # ---------------------------------------------------------------------
+
+        if hasattr(model, "coef_"):
+
+            # Linear models (e.g., Ridge): Use absolute coefficient values
+            coefficients = np.asarray(model.coef_).ravel()
+            importance = np.abs(coefficients)
+
+        elif hasattr(model, "get_booster"):
+
+            # XGBoost: Use gain-based feature importance
+            booster = model.get_booster()
+            gain_importance = booster.get_score(importance_type="gain")
+
+            importance = np.array([
+                gain_importance.get(feature, 0.0)
+                for feature in X_train.columns
+            ])
+
+        elif hasattr(model, "feature_importances_"):
+
+            # Tree Ensembles (e.g., Random Forest): Use impurity-based importance
+            importance = model.feature_importances_
+
+        else:
+
+            raise ValueError(
+                f"Feature importance extraction is not supported for "
+                f"the model type: {type(model).__name__}."
+            )
+
+        # ---------------------------------------------------------------------
+        # Normalize importance values to sum to 100%
+        # ---------------------------------------------------------------------
+
+        total_importance = importance.sum()
+
+        if total_importance > 0:
+            importance_pct = (importance / total_importance) * 100
+        else:
+            importance_pct = importance
+
+        # ---------------------------------------------------------------------
+        # Format and store fold results
+        # ---------------------------------------------------------------------
+
+        fold_result = {"fold": fold_idx}
+        fold_result.update(dict(zip(X_train.columns, importance_pct)))
+
+        fold_importances.append(fold_result)
+
+    # =========================================================================
+    # Build final DataFrame
+    # =========================================================================
+
+    df_importance = pd.DataFrame(fold_importances)
+
+    return df_importance

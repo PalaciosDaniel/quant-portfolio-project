@@ -341,3 +341,10 @@ DECISION A FUTURO: Estaria bien en algun momento justificar como hemos hecho la 
 ACLARACION: Al finan en el punto 6 hemos decidido entrenar todos los modelos con los hiperparametros by default (tambien hemos metido, aparte del baseline Linear regression pura, la Ridge regression) para ver que tal lo hacen los modelos "puros". Luego ya elegimos a los mejores y ya metemos la parte de optimizacion de hiperparametros (en el punto 8). 
 
 DECISION: Se ha manipulado la funcion run_cpcv_training ( y se ha aadidio otra antes) del training.py para adaptarla a la CPU del ordenador (ahora esa funcion ejecuta hasta 4 folds CPCV simultáneamente) y luego cada Random Forest utiliza un solo hilo. Esto se ha hecho porque Random Forest tardaba una eternidad en runear (mas de 9 minutos) pero puede ser una decision muy especifica de mi ordenador, es decir, en algun momento hay que aclarar que esto es un caso personal y a llo mejor deberiamos de generalizar. 
+
+
+## [09/08/2026] - Factor modeling (06_factor_modeling.ipynb)
+
+### 📝 Notas y decisiones
+
+ACLARACION: Para no cargar todos los modelos otra vez, la información importante está en los .parquet. Si necesitamos meter mas codigo simplemente runeamos el codigo hasta el punto 5 incluido (ahi ya hemos creado todas las variables, importado todas las funciones, etc.) que no tarda nada (en el punto 6 ya empezamos a cargar modelos baseline).

@@ -8,6 +8,7 @@ into a unified scoring interface.
 import pandas as pd
 import numpy as np
 import shap
+import matplotlib.pyplot as plt
 
 from .metrics.error_metrics import compute_error_metrics
 from .metrics.ranking_metrics import compute_ic_metrics
@@ -221,10 +222,6 @@ def extract_cpcv_feature_importance(
     return df_importance
 
 
-# =============================================================================
-# SHAP Analysis — CPCV Validation
-# =============================================================================
-
 def compute_cpcv_shap(
     model_cls,
     model_params,
@@ -239,9 +236,15 @@ def compute_cpcv_shap(
     across CPCV folds.
 
     SHAP is used as a diagnostic interpretability tool rather
-    than as a performance evaluation. Therefore, a reduced
-    CPCV split set and validation subsampling are used to
-    control computational cost.
+    than as a performance evaluation. A reduced CPCV split set
+    and validation subsampling are used to control computational
+    cost.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing the original feature values,
+        corresponding SHAP values, and CPCV fold identifier.
     """
 
     rng = np.random.default_rng(random_state)
@@ -287,7 +290,9 @@ def compute_cpcv_shap(
         # Train model
         # ---------------------------------------------------------------------
 
-        model = model_cls(**model_params)
+        model = model_cls(
+            **model_params
+        )
 
         model.fit(
             X_train,
@@ -302,17 +307,22 @@ def compute_cpcv_shap(
             model
         )
 
-        shap_values = explainer.shap_values(X_val_sample.values)
-
-        # ---------------------------------------------------------------------
-        # Store SHAP values
-        # ---------------------------------------------------------------------
-
-        df_shap_fold = pd.DataFrame(
-            shap_values,
-            columns=X.columns,
-            index=X_val_sample.index,
+        shap_values = explainer.shap_values(
+            X_val_sample
         )
+
+        # ---------------------------------------------------------------------
+        # Build result DataFrame
+        # ---------------------------------------------------------------------
+
+        df_shap_fold = X_val_sample.copy()
+
+        shap_columns = [
+            f"SHAP_{column}"
+            for column in X.columns
+        ]
+
+        df_shap_fold[shap_columns] = shap_values
 
         df_shap_fold["fold"] = fold_idx
 
@@ -330,3 +340,57 @@ def compute_cpcv_shap(
     )
 
     return df_shap
+
+
+# =============================================================================
+# SHAP Dependence Plots — Multiple Features
+# =============================================================================
+
+def plot_shap_dependence_grid(
+    df_shap,
+    feature_columns,
+    display_names=None,
+    model_name="Model",
+    figsize=(8, 4),
+):
+    fig, axes = plt.subplots(
+        len(feature_columns),
+        1,
+        figsize=(figsize[0], figsize[1] * len(feature_columns)),
+    )
+
+    if len(feature_columns) == 1:
+        axes = [axes]
+
+    for ax, feature in zip(axes, feature_columns):
+
+        display_name = (
+            display_names.get(feature, feature)
+            if display_names is not None
+            else feature
+        )
+
+        shap_cols = [f"SHAP_{f}" for f in feature_columns]
+
+        shap.dependence_plot(
+            feature,
+            df_shap[shap_cols].to_numpy(),      # SHAP values
+            df_shap[feature_columns],            # Features original values
+            feature_names=feature_columns,
+            interaction_index=None,
+            ax=ax,
+            show=False,
+        )
+
+        ax.set_xlabel(display_name, fontsize=12)
+        ax.set_ylabel("SHAP value", fontsize=11)
+        ax.tick_params(axis="both", labelsize=10)
+
+    fig.suptitle(
+        f"SHAP Dependence Plots — {model_name}",
+        fontsize=15,
+        y=1.02,
+    )
+
+    fig.tight_layout()
+    plt.show()

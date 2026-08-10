@@ -348,3 +348,9 @@ DECISION: Se ha manipulado la funcion run_cpcv_training ( y se ha aadidio otra a
 ### 📝 Notas y decisiones
 
 ACLARACION: Para no cargar todos los modelos otra vez, la información importante está en los .parquet. Si necesitamos meter mas codigo simplemente runeamos el codigo hasta el punto 5 incluido (ahi ya hemos creado todas las variables, importado todas las funciones, etc.) que no tarda nada (en el punto 6 ya empezamos a cargar modelos baseline).
+
+## [10/08/2026] - Factor modeling (06_factor_modeling.ipynb)
+
+### 📝 Notas y decisiones
+
+Para comrpobar cualquier cosilla del notebook 06, como los modelos tardan en runear bastante, podemos runear hasta el bloque 5 incluido, luego la celda de splits_search si necesitas probar algo y luego el .parquet donde tenemos los best params metidos (punto 8.6.1). 

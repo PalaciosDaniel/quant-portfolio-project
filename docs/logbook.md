@@ -354,3 +354,5 @@ ACLARACION: Para no cargar todos los modelos otra vez, la información important
 ### 📝 Notas y decisiones
 
 Para comrpobar cualquier cosilla del notebook 06, como los modelos tardan en runear bastante, podemos runear hasta el bloque 5 incluido, luego la celda de splits_search si necesitas probar algo y luego el .parquet donde tenemos los best params metidos (punto 8.6.1). 
+
+ACLARACION: Las discusiones de los dependence plots del SHAP no están muy bien, no quedan claras y tienen errores. Repasar. 

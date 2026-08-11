@@ -356,3 +356,13 @@ ACLARACION: Para no cargar todos los modelos otra vez, la información important
 Para comrpobar cualquier cosilla del notebook 06, como los modelos tardan en runear bastante, podemos runear hasta el bloque 5 incluido, luego la celda de splits_search si necesitas probar algo y luego el .parquet donde tenemos los best params metidos (punto 8.6.1). 
 
 ACLARACION: Las discusiones de los dependence plots del SHAP no están muy bien, no quedan claras y tienen errores. Repasar. 
+
+## [11/08/2026] - Factor modeling (07_oos_test.ipynb)
+
+### 📝 Notas y decisiones
+
+ACLARACION: para no volver a cargar todo, simplemente runeas las dos primeras celda sy luego saltas directamennte el punto 4 
+
+ACLARACION: en ``oos_predictions.parquet`` guardamos tanto los forward returns del año y medio de backtest como las predicciones de los tres modelos para ese mismo periodo de tiempo y los valores de los tres factores para cada una de las empresas. 
+
+ACLARACION: en final_model\oos metemos basicamente todo lo que hemos sacado en el notebook 07. 

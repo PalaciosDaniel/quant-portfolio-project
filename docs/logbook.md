@@ -366,3 +366,15 @@ ACLARACION: para no volver a cargar todo, simplemente runeas las dos primeras ce
 ACLARACION: en ``oos_predictions.parquet`` guardamos tanto los forward returns del año y medio de backtest como las predicciones de los tres modelos para ese mismo periodo de tiempo y los valores de los tres factores para cada una de las empresas. 
 
 ACLARACION: en final_model\oos metemos basicamente todo lo que hemos sacado en el notebook 07. 
+
+SUGERENCIA: Estaria bien meter el decay IC si no lo hemos metido, en general, deberiamos de mirar mas hacia la teoria del docs de entendiendo el pipeline porque hay joyitas. Igual que lo de usar Elastic Net. 
+
+ACLARACION: Sobre la razon por la cual no hemos metido Elastic net. No se incluyó Elastic Net dentro del conjunto de modelos evaluados debido a que su principal ventaja frente a otros modelos lineales —la selección automática de variables en presencia de alta dimensionalidad o multicolinealidad entre features— no resulta aplicable al conjunto de datos final del proyecto. El proceso de selección de factores realizado previamente (análisis centrado en las relaciones entre las propias features, no en su correlación individual con el target) ya redujo el conjunto inicial de variables candidatas a tres factores con baja correlación entre sí y contribución individual verificada. En consecuencia, el problema de redundancia informativa que Elastic Net está diseñado para resolver mediante regularización L1/L2 ya había sido abordado de forma explícita en una etapa anterior del pipeline, por lo que su inclusión como modelo adicional no habría aportado una ventaja significativa sobre Ridge y Linear Regression, tal y como se confirma en los resultados obtenidos por ambos modelos lineales (prácticamente idénticos entre sí, lo cual es indicativo de la ausencia de multicolinealidad relevante en el conjunto final de factores).
+
+## [12/08/2026] - Factor modeling (08_portfolio_construction.ipynb)
+
+### 📝 Notas y decisiones
+
+ACLARACION: El notebook 08 no haba en ningun momento Black-Litterman, mucho lio. Podria ser buena meterla en el proyecto de portfolio optimization.  
+
+SUGERENCIA: En algun momento nos deberiamos de asegurar de que todas las rutas .parquet se hacen a partir de llas variables OUTPUT PATH y demas que se definen al principio de cada notebook (ahora mismo estan todas hechas sin utilizar estas variables). 

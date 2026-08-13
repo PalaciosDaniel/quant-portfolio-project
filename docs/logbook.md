@@ -378,3 +378,23 @@ ACLARACION: Sobre la razon por la cual no hemos metido Elastic net. No se incluy
 ACLARACION: El notebook 08 no haba en ningun momento Black-Litterman, mucho lio. Podria ser buena meterla en el proyecto de portfolio optimization.  
 
 SUGERENCIA: En algun momento nos deberiamos de asegurar de que todas las rutas .parquet se hacen a partir de llas variables OUTPUT PATH y demas que se definen al principio de cada notebook (ahora mismo estan todas hechas sin utilizar estas variables). 
+
+
+## [13/08/2026] - Factor modeling (08_portfolio_construction.ipynb)
+
+### 📝 Notas y decisiones
+
+SUGERENCIA: Un posible argumento a favor de la metodología que hemos utiliado para resolver el problema de los empates a la hora de distribuir el ranking entre los diez deciles. Concretamente hemos visato que la baja granularidad de las predicciones de XGBoost no afecta de manera homogénea a todo el rango de predicciones. Los empates son prácticamente universales en los deciles inferiores e intermedios, mientras que disminuyen sustancialmente en los deciles superiores, alcanzando su menor frecuencia en D10. Específicamente el porcentaje de empates en el D1 es del 100% (eso se cumple para los dciles del D1 al D8 o asi) y en el D10 es del 62,3%. Con esto podemos justificar que se utilice esta metdología precisamente porque en el decil que nos importa (D10, el superior) tampoco le afecta tanto. 
+
+SUGERENCIA: Deberiamos de especificar por que al final no hemos utilizado los precios de apertura para comprar una vez actualizados los pesos el dia anterior (lo que vamos a hacer es esperarnos el día entero, es decir, todos los pesos y todas las copras se hacen en Close). Una posible justificacion seria: 
+
+A la hora de estructurar la secuencia de rebalanceo existen dos alternativas habituales: utilizar la información disponible hasta el cierre de $t-1$ para implementar la cartera en la sesión $t$, o bien calcular la señal al cierre de $t-1$ y ejecutar en la apertura ($Open$) de $t$.
+
+En este trabajo se adopta formalmente la **primera opción**, calculando los pesos del día $t$ con información estricta hasta $t-1$ ($\sigma_{i,t} = \text{Std}(r_{i,t-20}, \dots, r_{i,t-1})$). Esta decisión responde a dos razones fundamentales:
+
+* **Integridad de los datos:** Las fuentes públicas como Yahoo Finance proporcionan cierres ajustados ($Adj\ Close$), pero no aperturas ajustadas de forma nativa ($Adj\ Open$). Mezclar ejecuciones en precios no ajustados con rendimientos calculados sobre series ajustadas introduciría distorsiones graves en la rentabilidad histórica.
+* **Alineación con la señal:** Los modelos se entrenaron para predecir la dinámica de retornos de cierre a cierre. Evaluar las carteras al cierre de $t$ preserva la homogeneidad de los datos, evita el *look-ahead bias* y aísla la capacidad predictiva del *alpha* frente al ruido de las subastas de apertura, siguiendo el estándar de la literatura en gestión cuantitativa.
+
+DECISION: en algun momento vamos a tener que coger todas las metrics y meterla en el archivo de src/metrics porque ahora tenemos las metricas de los modelos dentro de src/models/metrics y las del portfolio las vamos a tener dentro de src/portfolio. Siempre es mejor tener un src/metrics pesecificamente para eso (que de hehco ya lo tenemos pero esta vacio). 
+
+DECISION: podemos meter en el apartado ultimo del poryecto de mejoras para el futuro algo ipo: Para mitigar el supuesto de estacionariedad en la calibración, un desarrollo natural del proyecto consiste en **desacoplar el régimen macroeconómico del *alpha* puro de la señal**. En lugar de calibrar directamente sobre el retorno bruto nominal —el cual fluctúa con los tipos de interés libres de riesgo ($r_f$), la prima de riesgo de mercado y el régimen de volatilidad vigente—, la calibración debe realizarse sobre el **exceso de retorno ajustado por volatilidad** ($[r_{i, 21d} - r_{\text{mercado}}] / \sigma_t$). De este modo, la Regresión Isotónica mide únicamente el "premio" relativo que aporta el Top 10% frente al entorno general, permitiendo actualizar en tiempo real el rendimiento esperado final sumándole la base macroeconómica actual de cada fecha $t$. Esto hace que el modelo sea dinámico y no quede arrastrado por regímenes pasados de tipos de interés o volatilidad.

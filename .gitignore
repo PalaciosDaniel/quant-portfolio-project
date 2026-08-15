@@ -19,6 +19,7 @@ data/raw/
 data/processed/
 data/preprocessed/
 data/model_results/
+data/portfolio_results/
 *.parquet
 
 # Keep folder structure

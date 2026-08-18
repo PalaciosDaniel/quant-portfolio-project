@@ -410,3 +410,17 @@ Una vez tenemos eso ordenamos todas las empresas en todas las fechas hacemos el 
 Ahora la isotonic regression lo que hace es calcularnos por cada decil el retorno promedio (o sea vamos a tener 10 retornos promedios asociados a los diez deciles, y obviamente todas las empresas dentro del decil van a tener el mism retorno promedio esperado) y esta regresion nos asegura que la curva sea estrictamente creciente/monótona. Lo que conseguimos es responder a la siguiente pregunta: Históricamente, cuando el modelo colocó a una acción en el decil 10 de su día, ¿cuál fue su retorno real medio a 21 días?.
 
 Podría parecer que solamene 10 grupos son pocos ya que le estamos dando el mismo retorno esperado a la accion en el top 1 y a la accion en el top 50 (porque las dos pertenecen al decil 10). Pero realmente haciendolo asi tenemos el equilibrio perfecto ( y el que se ha demostrado en la literatura) entre robustez y separacion porque si intentamos acotar mas reducuiriamos drastciamente el tamaño muestral y caeriamos en la ilusion de precision de los grupos pequeños (relacion señal-ruido tan extremadamente baja que no podemos acotar tanto). 
+
+## [18/08/2026] - Factor modeling (08_portfolio_construction.ipynb)
+
+### 📝 Notas y decisiones
+
+SUGERENCIA: Podemos meter en future work y demas las constraints que no hemos llegado a meter en nuestro proyecto porque abririamos un analisis adicional totalmente nuevo, como es en el caso de las sector constraints, factor neutrality. 
+
+ACLARACION: En el noteook 09 o así tndremos que aclarar el peso máximo que dejamos que un activo tenga: MAX_POSITION_WEIGHT = 0.05. 
+
+SUGERENCIA: Otra cosa para el future work. Una extensión adicional del mecanismo de control de turnover consistiría en introducir bandas de permanencia (buffer zones) en la selección de activos. Esta metodología permitiría reducir el churn asociado a valores próximos a los umbrales de selección, complementando el turnover cap implementado en este trabajo.
+
+ACLARACION: No metimos en su momento el Score Threshold porque tener una cartera donde la decision para meter un activo o no sea porque cumple un rendimiento especificio (como una especie de cota) introduce muchos problemas como por ejemplo la justificacion de que es un rendimiento suficiente para entrar, como calculas ese rendimiento sin contaminar el OOS o todos los problemas que derivan de tener una cartera con un numero de activos variable. Metodologicamente tiene mucho mas sentido hacerlo con lo del top 10%, top 20% y top 30%. 
+
+DECISION: en ealgun momento habria que cambiar calculate_drawdown_metrics de utils (se utiliza en el apartado 10.1)

@@ -424,3 +424,13 @@ SUGERENCIA: Otra cosa para el future work. Una extensión adicional del mecanism
 ACLARACION: No metimos en su momento el Score Threshold porque tener una cartera donde la decision para meter un activo o no sea porque cumple un rendimiento especificio (como una especie de cota) introduce muchos problemas como por ejemplo la justificacion de que es un rendimiento suficiente para entrar, como calculas ese rendimiento sin contaminar el OOS o todos los problemas que derivan de tener una cartera con un numero de activos variable. Metodologicamente tiene mucho mas sentido hacerlo con lo del top 10%, top 20% y top 30%. 
 
 DECISION: en ealgun momento habria que cambiar calculate_drawdown_metrics de utils (se utiliza en el apartado 10.1)
+
+DECISION: En el 10.2.1 si que utilizamos funciones auxiliares para calular el Sharpe, Sortino y cosas del Drawdown pero en el punto 9 no (deberíamos cambiarlo en algún momento). 
+
+## [19/08/2026] - Factor modeling (08_portfolio_construction.ipynb)
+
+### 📝 Notas y decisiones
+
+ACLARACION: Hemos metido el apartado 10 del notebook 08 como apartado 3 (primer apartado) del notebook 09 porque tenia mas sentido que el portfolio performance estuviese en otro notebook distinto del portfolio construction. 
+
+SUGERENCIA: En el notebook 08 hemos cerrado con unas conclusiones pero no hemos guardado en ningun JSON o similar el metadata. Si que hemos ido guardando cosas en .parquet a lo largo del notebook pero a lo mejor estaria bien hacer un JSON explicito explicando el registro de los parámetros, reglas de selección, metodología de weighting, restricciones y supuestos utilizados para construir cada cartera

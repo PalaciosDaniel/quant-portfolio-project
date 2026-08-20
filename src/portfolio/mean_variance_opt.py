@@ -123,3 +123,53 @@ def compute_maximum_sharpe_weights(
     )
 
     return weights
+
+
+# =============================================================================
+# Isotonic calibration
+# =============================================================================
+
+from sklearn.isotonic import IsotonicRegression
+
+def fit_isotonic_calibration(
+    calibration_data,
+):
+    """
+    Fit isotonic regression from cross-sectional
+    prediction percentile to realized forward return.
+    """
+
+    # -------------------------------------------------------------------------
+    # Aggregate realized returns by decile
+    # -------------------------------------------------------------------------
+
+    decile_data = (
+        calibration_data
+        .groupby("decile")
+        .agg(
+            percentile=("percentile", "mean"),
+            target=("target", "mean"),
+            observations=("target", "count"),
+        )
+        .reset_index()
+    )
+
+    # -------------------------------------------------------------------------
+    # Fit isotonic regression
+    # -------------------------------------------------------------------------
+
+    isotonic_model = IsotonicRegression(
+        increasing=True,
+        out_of_bounds="clip",
+    )
+
+    isotonic_model.fit(
+        decile_data["percentile"],
+        decile_data["target"],
+        sample_weight=decile_data["observations"],
+    )
+
+    return (
+        isotonic_model,
+        decile_data,
+    )

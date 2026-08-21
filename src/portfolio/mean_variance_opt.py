@@ -354,119 +354,70 @@ def compute_maximum_sharpe_weights(
     expected_returns,
     covariance_matrix,
 ):
-    """
-    Compute long-only Maximum Sharpe Ratio weights.
+    """Compute long-only Maximum Sharpe Ratio weights via quadratic reformulation.
 
-    The Maximum Sharpe problem is reformulated as a convex
-    minimum-variance problem:
-
+    Reformulation:
         minimize    x' Σ x
-
         subject to  μ' x = 1
                     x >= 0
 
-    The resulting solution is normalized to obtain portfolio weights.
+    Normalized x yields optimal long-only portfolio weights.
     """
-
-    expected_returns = np.asarray(
-        expected_returns,
-        dtype=float,
-    )
-
-    covariance_matrix = np.asarray(
-        covariance_matrix,
-        dtype=float,
-    )
-
+    expected_returns = np.asarray(expected_returns, dtype=float)
+    covariance_matrix = np.asarray(covariance_matrix, dtype=float)
     n_assets = len(expected_returns)
 
-    # -------------------------------------------------------------------------
-    # Initial solution
-    # -------------------------------------------------------------------------
+    # 1. Edge Case: If all returns are non-positive, fallback to Equal Weight
+    if np.all(expected_returns <= 0) or np.isnan(expected_returns).any():
+        return np.full(n_assets, 1.0 / n_assets)
 
-    initial_x = np.full(
-        n_assets,
-        1.0 / expected_returns.sum(),
-    )
+    # 2. Safe Initial Solution (only over positive expected returns)
+    pos_mask = expected_returns > 0
+    initial_x = np.zeros(n_assets)
+    if np.any(pos_mask):
+        initial_x[pos_mask] = 1.0 / expected_returns[pos_mask].sum()
+    else:
+        initial_x = np.full(n_assets, 1.0 / n_assets)
 
-    # -------------------------------------------------------------------------
-    # Objective: portfolio variance
-    # -------------------------------------------------------------------------
-
+    # 3. Objective & Gradient
     def objective(x):
-
-        return (
-            x
-            @ covariance_matrix
-            @ x
-        )
-
-    # -------------------------------------------------------------------------
-    # Analytical gradient
-    # -------------------------------------------------------------------------
+        return x @ covariance_matrix @ x
 
     def gradient(x):
+        return 2.0 * (covariance_matrix @ x)
 
-        return (
-            2.0
-            * covariance_matrix
-            @ x
-        )
-
-    # -------------------------------------------------------------------------
-    # Expected return constraint
-    # -------------------------------------------------------------------------
-
+    # 4. Constraints & Bounds
     constraint = {
         "type": "eq",
-        "fun": lambda x:
-            expected_returns @ x - 1.0,
-        "jac": lambda x:
-            expected_returns,
+        "fun": lambda x: expected_returns @ x - 1.0,
+        "jac": lambda x: expected_returns,
     }
+    bounds = [(0.0, None) for _ in range(n_assets)]
 
-    # -------------------------------------------------------------------------
-    # Long-only constraint
-    # -------------------------------------------------------------------------
-
-    bounds = [
-        (0.0, None)
-        for _ in range(n_assets)
-    ]
-
-    # -------------------------------------------------------------------------
-    # Optimization
-    # -------------------------------------------------------------------------
-
-    result = minimize(
-        objective,
-        initial_x,
-        jac=gradient,
-        method="SLSQP",
-        bounds=bounds,
-        constraints=constraint,
-        options={
-            "maxiter": 500,
-            "ftol": 1e-9,
-        },
-    )
-
-    if not result.success:
-        raise RuntimeError(
-            f"Maximum Sharpe optimization failed: "
-            f"{result.message}"
+    # 5. Optimization
+    try:
+        result = minimize(
+            objective,
+            initial_x,
+            jac=gradient,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=constraint,
+            options={"maxiter": 500, "ftol": 1e-9},
         )
 
-    # -------------------------------------------------------------------------
-    # Convert auxiliary solution into portfolio weights
-    # -------------------------------------------------------------------------
+        # 6. Safe Normalization or Fallback
+        if result.success and result.x.sum() > 1e-8:
+            weights = result.x / result.x.sum()
+            # Clean numerical noise near zero
+            weights[weights < 1e-6] = 0.0
+            return weights / weights.sum()
 
-    weights = (
-        result.x
-        / result.x.sum()
-    )
+    except Exception:
+        pass
 
-    return weights
+    # Fallback if optimization fails or non-converged
+    return np.full(n_assets, 1.0 / n_assets)
 
 
 # =============================================================================

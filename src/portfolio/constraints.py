@@ -516,3 +516,20 @@ def apply_turnover_constraint(
             previous_weights = constrained.copy()
 
     return pd.concat(constrained_list, ignore_index=True)
+
+
+# =============================================================================
+# Helper function to extract weighting strategy from portfolio name
+# =============================================================================
+def extract_weighting_scheme(portfolio_name):
+    if "maximum_sharpe" in portfolio_name:
+        return "Maximum Sharpe"
+    elif "risk_parity" in portfolio_name:
+        return "Risk Parity"
+    elif "inverse_volatility" in portfolio_name:
+        return "Inverse Volatility"
+    elif "signal_weight" in portfolio_name:
+        return "Signal Weighting"
+    elif "equal_weight" in portfolio_name:
+        return "Equal Weight"
+    return "Other"

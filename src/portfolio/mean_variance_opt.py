@@ -1118,7 +1118,6 @@ def report_cross_model_agreement(
                 if merged.empty:
                     continue
 
-                # AQUÍ USAS TU FUNCIÓN ORIGINAL:
                 daily_corr = merged.groupby(level="date").apply(
                     lambda g: _safe_spearman(g, m1, m2)
                 )

@@ -533,3 +533,220 @@ def extract_weighting_scheme(portfolio_name):
     elif "equal_weight" in portfolio_name:
         return "Equal Weight"
     return "Other"
+
+
+# =============================================================================
+# BUFFER ZONE SELECTION — SEQUENTIAL HYSTERESIS ON THE SELECTION UNIVERSE
+# =============================================================================
+
+def apply_buffer_zone_selection(
+    pct_wide_model,
+    entry_cutoff,
+    buffer_width=0.03,
+):
+    """Applies asymmetric hysteresis (buffer zone) to a cross-sectional
+    percentile-based selection universe.
+
+    An asset already held in the previous rebalance date remains eligible
+    as long as its percentile stays above (entry_cutoff - buffer_width).
+    An asset NOT currently held must clear the full entry_cutoff to enter.
+    This reduces boundary-driven turnover without relaxing the entry bar
+    for genuinely new positions.
+
+    The strict '>' comparison on entry mirrors the original decile filter's
+    behavior (np.ceil(pct * 10) == 10  <=>  pct > 0.9, not pct >= 0.9).
+
+    Parameters
+    ----------
+    pct_wide_model : pd.DataFrame
+        Cross-sectional percentile, indexed by date, columns = tickers,
+        sourced from signal_ranks (same source as quantile_data).
+    entry_cutoff : float
+        Original selection threshold (e.g. 0.90 for Top 10%).
+    buffer_width : float, optional
+        Width of the hysteresis band subtracted from entry_cutoff to form
+        the exit threshold, by default 0.03.
+
+    Returns
+    -------
+    dict[pd.Timestamp, list[str]]
+        Buffered ticker selection per date.
+    """
+    exit_cutoff = entry_cutoff - buffer_width
+
+    dates = pct_wide_model.index.sort_values()
+    buffered_tickers_by_date = {}
+    previously_held = set()
+
+    for date in dates:
+        pct_row = pct_wide_model.loc[date]
+
+        eligible_new = set(pct_row.index[pct_row > entry_cutoff])
+        eligible_retained = set(
+            pct_row.index[pct_row >= exit_cutoff]
+        ) & previously_held
+
+        selected = eligible_new | eligible_retained
+        buffered_tickers_by_date[date] = sorted(selected)
+        previously_held = selected
+
+    return buffered_tickers_by_date
+
+
+def analyze_buffer_eclipse_by_min_weight(
+    comparison_pairs,
+    portfolio_weights,
+    buffered_weights_map,
+    pct_wide_by_model,
+    buffered_tickers_by_model,
+    rank_columns,
+    max_weight=0.05,
+    min_weight=0.005,
+    entry_cutoff=0.90,
+):
+    """
+    Evaluates how many buffer-retained positions are eclipsed (dropped) 
+    by the minimum position weight cleanup threshold.
+    """
+    records = []
+
+    for nature, original_name, buffered_name in comparison_pairs:
+        buffered_source = buffered_weights_map[nature]
+
+        for model in rank_columns:
+            # 1. Process original and buffered weights under max/min constraints
+            dfs_stats = {}
+            for key, src_df, p_name in [
+                ("orig", portfolio_weights, original_name),
+                ("buf", buffered_source, buffered_name),
+            ]:
+                subset = src_df[
+                    (src_df["model"] == model) & (src_df["portfolio"] == p_name)
+                ]
+
+                daily_records = []
+                for date, group in subset.groupby("date"):
+                    raw_w = group["weight"].to_numpy()
+                    capped_w = apply_max_position_weight(
+                        raw_w.copy(), max_weight=max_weight
+                    )
+
+                    try:
+                        final_w = apply_min_effective_weight(
+                            capped_w.copy(), min_weight=min_weight
+                        )
+                    except ValueError:
+                        final_w = capped_w
+
+                    daily_records.append(
+                        {
+                            "n_dropped_by_min": (raw_w > 1e-8).sum()
+                            - (final_w > 1e-8).sum()
+                        }
+                    )
+
+                dfs_stats[key] = pd.DataFrame(daily_records)
+
+            # 2. Track "Buffer-Only" positions (retained purely by hysteresis)
+            pct_wide_model = pct_wide_by_model[model]
+            buf_tickers_date = buffered_tickers_by_model[model]
+            buf_subset = buffered_source[
+                (buffered_source["model"] == model)
+                & (buffered_source["portfolio"] == buffered_name)
+            ]
+
+            n_buffer_only_total = 0
+            n_buffer_only_eclipsed = 0
+
+            for date, group in buf_subset.groupby("date"):
+                if date not in pct_wide_model.index:
+                    continue
+
+                pct_row = pct_wide_model.loc[date]
+                held_tickers = buf_tickers_date.get(date, [])
+                strict_pass = set(pct_row.index[pct_row > entry_cutoff])
+                buffer_only_tickers = set(held_tickers) - strict_pass
+
+                if not buffer_only_tickers:
+                    continue
+
+                date_weights = group.set_index("ticker")["weight"]
+                bo_weights = date_weights.reindex(
+                    list(buffer_only_tickers)
+                ).fillna(0.0)
+
+                n_buffer_only_total += len(buffer_only_tickers)
+                n_buffer_only_eclipsed += (bo_weights < min_weight).sum()
+
+            records.append(
+                {
+                    "nature": nature,
+                    "model": model,
+                    "orig_avg_dropped_by_min": dfs_stats["orig"]["n_dropped_by_min"].mean(),
+                    "buf_avg_dropped_by_min": dfs_stats["buf"]["n_dropped_by_min"].mean(),
+                    "n_buffer_only_positions": n_buffer_only_total,
+                    "n_buffer_only_eclipsed": n_buffer_only_eclipsed,
+                }
+            )
+
+    return pd.DataFrame(records)
+
+
+# =============================================================================
+# APPLY MAX/MIN WEIGHT CONSTRAINTS TO BUFFERED PORTFOLIOS
+# =============================================================================
+
+MAX_POSITION_WEIGHT = 0.05
+MIN_POSITION_WEIGHT = 0.005
+
+def apply_block7_constraints(weights_df, model, portfolio_name):
+    """Applies apply_max_position_weight then apply_min_effective_weight,
+    per rebalance date, to a single (model, portfolio) slice.
+
+    Returns a long DataFrame with the constrained weights, and a per-date
+    diagnostic log of any infeasibility encountered.
+    """
+    subset = weights_df[
+        (weights_df["model"] == model) & (weights_df["portfolio"] == portfolio_name)
+    ]
+
+    constrained_records = []
+    diagnostic_records = []
+
+    for date, group in subset.groupby("date"):
+        tickers = group["ticker"].to_numpy()
+        raw_weights = group["weight"].to_numpy()
+
+        n_active_raw = (raw_weights > 1e-8).sum()
+
+        try:
+            capped = apply_max_position_weight(
+                raw_weights.copy(), max_weight=MAX_POSITION_WEIGHT
+            )
+        except ValueError as e:
+            diagnostic_records.append({
+                "date": date, "step": "max_weight", "error": str(e),
+                "n_active_raw": n_active_raw,
+            })
+            capped = raw_weights.copy()  # fallback: keep uncapped for this date
+
+        try:
+            final_weights = apply_min_effective_weight(
+                capped.copy(), min_weight=MIN_POSITION_WEIGHT
+            )
+        except ValueError as e:
+            diagnostic_records.append({
+                "date": date, "step": "min_weight", "error": str(e),
+                "n_active_raw": n_active_raw,
+            })
+            final_weights = capped  # fallback: keep capped-only for this date
+
+        for ticker, w in zip(tickers, final_weights):
+            constrained_records.append({
+                "date": date, "ticker": ticker, "model": model,
+                "portfolio": portfolio_name, "weight": w,
+            })
+
+    constrained_df = pd.DataFrame(constrained_records)
+    diagnostics_df = pd.DataFrame(diagnostic_records)
+    return constrained_df, diagnostics_df

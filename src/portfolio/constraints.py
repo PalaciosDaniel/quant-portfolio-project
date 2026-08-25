@@ -5,6 +5,13 @@
 import numpy as np
 import pandas as pd
 
+TRADING_DAYS_PER_YEAR = 252
+REBALANCING_DAYS = 21
+REBALANCINGS_PER_YEAR = (
+    TRADING_DAYS_PER_YEAR
+    / REBALANCING_DAYS
+)
+
 
 def apply_max_position_weight(
     weights,
@@ -306,217 +313,394 @@ def apply_min_effective_weight(
 
     return constrained_weights
 
-
 # =============================================================================
-# Turnover Diagnosis
+# TURNOVER AT REBALANCE FREQUENCY, ACCOUNTING FOR MARKET DRIFT
 # =============================================================================
 
-TRADING_DAYS_PER_YEAR = 252
-REBALANCING_DAYS = 21
-REBALANCINGS_PER_YEAR = (
-    TRADING_DAYS_PER_YEAR
-    / REBALANCING_DAYS
-)
-
-
-def compute_turnover(
-    weights,
+def compute_turnover_with_drift(
+    weights_df,
+    simple_returns,
+    rebalancing_days=21,
 ):
-    """
-    Compute portfolio turnover between
-    consecutive rebalancing dates.
-
-    Turnover = 0.5 * sum(|w_t - w_{t-1}|)
-    """
-
-    weights = (
-        weights
-        .copy()
-    )
-
-    weights["date"] = pd.to_datetime(
-        weights["date"]
-    )
+    weights_df = weights_df.copy()
+    weights_df["date"] = pd.to_datetime(weights_df["date"])
 
     turnover_list = []
 
-    # -------------------------------------------------------------------------
-    # Process each model and portfolio independently
-    # -------------------------------------------------------------------------
+    for (model, portfolio), data in weights_df.groupby(["model", "portfolio"]):
 
-    for (
-        model,
-        portfolio,
-    ), data in weights.groupby(
-        [
-            "model",
-            "portfolio",
-        ]
-    ):
-
-        data = (
-            data
-            .pivot(
-                index="date",
-                columns="ticker",
-                values="weight",
-            )
+        wide = (
+            data.pivot(index="date", columns="ticker", values="weight")
             .fillna(0.0)
             .sort_index()
         )
 
-        # ---------------------------------------------------------------------
-        # Consecutive portfolio weights
-        # ---------------------------------------------------------------------
+        all_dates = wide.index
+        rebalance_dates = all_dates[::rebalancing_days]
 
-        previous = data.shift(1)
-
-        # ---------------------------------------------------------------------
-        # L1 turnover
-        # ---------------------------------------------------------------------
-
-        turnover = (
-            0.5
-            * (
-                data
-                - previous
-            )
-            .abs()
-            .sum(axis=1)
-        )
-
-        turnover = (
-            turnover
-            .dropna()
-        )
-
-        if len(turnover) == 0:
+        if len(rebalance_dates) < 2:
             continue
 
-        result = pd.DataFrame(
-            {
-                "date": turnover.index,
+        is_long_short = (wide < 0).any().any()
+
+        for i in range(1, len(rebalance_dates)):
+            prev_rebal_date = rebalance_dates[i - 1]
+            curr_rebal_date = rebalance_dates[i]
+
+            old_target = wide.loc[prev_rebal_date]
+            new_target = wide.loc[curr_rebal_date]
+
+            window_returns = simple_returns.loc[
+                (simple_returns.index > prev_rebal_date)
+                & (simple_returns.index <= curr_rebal_date)
+            ]
+            compounded_return = (1.0 + window_returns).prod() - 1.0
+            compounded_return = compounded_return.reindex(old_target.index).fillna(0.0)
+
+            drifted = old_target * (1.0 + compounded_return)
+
+            if is_long_short:
+                # Renormalize each leg independently to its own original
+                # gross exposure — never mix signs into a single total
+                long_mask = old_target > 0
+                short_mask = old_target < 0
+
+                long_gross_target = old_target[long_mask].sum()
+                short_gross_target = -old_target[short_mask].sum()
+
+                drifted_long_sum = drifted[long_mask].sum()
+                drifted_short_sum = -drifted[short_mask].sum()
+
+                if drifted_long_sum > 0:
+                    drifted[long_mask] *= long_gross_target / drifted_long_sum
+                if drifted_short_sum > 0:
+                    drifted[short_mask] *= short_gross_target / drifted_short_sum
+            else:
+                drifted_sum = drifted.sum()
+                if drifted_sum > 0:
+                    drifted = drifted / drifted_sum
+                else:
+                    drifted = old_target
+
+            diff = (new_target - drifted).abs()
+            turnover = 0.5 * diff.sum()
+
+            turnover_list.append({
+                "date": curr_rebal_date,
                 "model": model,
                 "portfolio": portfolio,
-                "turnover": turnover.values,
-            }
-        )
+                "turnover": turnover,
+            })
 
-        turnover_list.append(
-            result
-        )
-
-    if not turnover_list:
-        return pd.DataFrame(
-            columns=[
-                "date",
-                "model",
-                "portfolio",
-                "turnover",
-            ]
-        )
-
-    return pd.concat(
-        turnover_list,
-        ignore_index=True,
-    )
-
+    return pd.DataFrame(turnover_list)
 
 # =============================================================================
-# Turnover Constraint — Maximum Sharpe
+# TURNOVER CONSTRAINT WITH MARKET DRIFT — REBALANCE-ONLY + DAILY HOLD OUTPUT
 # =============================================================================
 
-MAX_TURNOVER_TARGET = 0.30
-MAX_TURNOVER_DESIGN = 0.25
-
-
-def apply_turnover_constraint(
-    weights,
-    max_turnover=MAX_TURNOVER_DESIGN,
+def apply_turnover_constraint_with_drift(
+    portfolio_weights,
+    simple_returns,
+    rebalancing_days=21,
+    max_turnover_design=0.25,
     min_weight=0.005,
     max_weight=0.05,
 ):
-    """Apply turnover constraint via interpolation, followed by box constraints
+    """Applies the gamma-interpolation turnover constraint at rebalance
+    frequency, comparing the raw target against the PREVIOUS constrained
+    position drifted forward by realized market returns (not the stale,
+    un-drifted previous target).
 
-    (min_weight, max_weight) post-processing.
+    For long-short portfolios, drift renormalization and box constraints
+    treat the long and short legs independently, consistent with
+    apply_max_position_weight / apply_min_effective_weight.
+
+    Parameters
+    ----------
+    portfolio_weights : pd.DataFrame
+        Daily weights (date, ticker, model, portfolio, weight), as produced
+        by Block 6.
+    simple_returns : pd.DataFrame
+        Daily simple returns, date x ticker (from adj_close.pct_change()).
+    rebalancing_days : int
+        Spacing, in trading days, between rebalance events.
+    max_turnover_design : float
+        Internal (conservative) turnover cap used by the gamma-interpolation
+        step. Deliberately set below the nominal 0.30 mandate to absorb the
+        expansion introduced by the subsequent box-constraint renormalization
+        (not yet validated empirically — deferred).
+    min_weight, max_weight : float
+        Box constraints applied after the turnover interpolation, via
+        apply_min_effective_weight and apply_max_position_weight.
+
+    Returns
+    -------
+    rebalance_weights : pd.DataFrame
+        (date, ticker, model, portfolio, weight) — one row per rebalance
+        date only.
+    daily_weights : pd.DataFrame
+        Same schema, but with the constrained rebalance weights held
+        (propagated forward, unchanged) across all daily dates until the
+        next rebalance.
     """
+    portfolio_weights = portfolio_weights.copy()
+    portfolio_weights["date"] = pd.to_datetime(portfolio_weights["date"])
 
-    weights = weights.copy()
-    weights["date"] = pd.to_datetime(weights["date"])
+    rebalance_records = []
+    daily_frames = []
 
-    constrained_list = []
+    for (model, portfolio), data in portfolio_weights.groupby(["model", "portfolio"]):
 
-    for (model, portfolio), data in weights.groupby(["model", "portfolio"]):
-        data = data.sort_values("date")
-        dates = data["date"].unique()
+        wide = (
+            data.pivot(index="date", columns="ticker", values="weight")
+            .fillna(0.0)
+            .sort_index()
+        )
 
-        previous_weights = None
+        all_dates = wide.index
+        rebalance_dates = all_dates[::rebalancing_days]
 
-        for date in dates:
-            current = data[data["date"] == date].set_index("ticker")["weight"]
+        if len(rebalance_dates) == 0:
+            continue
 
-            if previous_weights is None:
-                constrained = current.copy()
+        is_long_short = (wide < 0).any().any()
+        long_short_exposure = 0.5 if is_long_short else None
+
+        constrained_rows = {}
+        previous_constrained = None
+        previous_rebal_date = None
+
+        for curr_rebal_date in rebalance_dates:
+
+            raw_target = wide.loc[curr_rebal_date]
+
+            # ---------------------------------------------------------------
+            # 1. Turnover interpolation vs. the DRIFTED previous position
+            # ---------------------------------------------------------------
+            if previous_constrained is None:
+                # First rebalance: nothing to drift from, nothing to constrain
+                constrained = raw_target.copy()
             else:
-                all_tickers = previous_weights.index.union(current.index)
-                previous = previous_weights.reindex(
-                    all_tickers, fill_value=0.0
-                )
-                target = current.reindex(all_tickers, fill_value=0.0)
+                window_returns = simple_returns.loc[
+                    (simple_returns.index > previous_rebal_date)
+                    & (simple_returns.index <= curr_rebal_date)
+                ]
+                compounded_return = (1.0 + window_returns).prod() - 1.0
+                compounded_return = compounded_return.reindex(raw_target.index).fillna(0.0)
 
-                raw_turnover = 0.5 * np.abs(target - previous).sum()
+                drifted = previous_constrained * (1.0 + compounded_return)
 
-                # 1. Turnover constraint via gamma interpolation
-                if raw_turnover > max_turnover:
-                    gamma = max_turnover / raw_turnover
-                    constrained = previous + gamma * (target - previous)
+                if is_long_short:
+                    long_mask = previous_constrained > 0
+                    short_mask = previous_constrained < 0
+
+                    long_gross_target = previous_constrained[long_mask].sum()
+                    short_gross_target = -previous_constrained[short_mask].sum()
+
+                    drifted_long_sum = drifted[long_mask].sum()
+                    drifted_short_sum = -drifted[short_mask].sum()
+
+                    if drifted_long_sum > 0:
+                        drifted[long_mask] *= long_gross_target / drifted_long_sum
+                    if drifted_short_sum > 0:
+                        drifted[short_mask] *= short_gross_target / drifted_short_sum
                 else:
-                    constrained = target.copy()
+                    drifted_sum = drifted.sum()
+                    drifted = drifted / drifted_sum if drifted_sum > 0 else previous_constrained
 
-            # -----------------------------------------------------------------
-            # 2. Post-processing: Box Constraints (Min & Max Weight)
-            # -----------------------------------------------------------------
-            # Step A: Filter out tiny positions below 0.5%
-            constrained[constrained < min_weight] = 0.0
+                raw_turnover = 0.5 * (raw_target - drifted).abs().sum()
 
-            # Step B: Iterative Clipping & Normalization to enforce max 5%
-            # Cap at max_weight and renormalize iteratively until convergence
-            for _ in range(10):
-                if constrained.sum() <= 0:
-                    break
-                constrained = constrained / constrained.sum()
+                if raw_turnover > max_turnover_design:
+                    gamma = max_turnover_design / raw_turnover
+                    constrained = drifted + gamma * (raw_target - drifted)
+                else:
+                    constrained = raw_target.copy()
 
-                # Cap weights strictly above max_weight
-                over_max = constrained > max_weight
-                if not over_max.any():
-                    break
-                constrained[over_max] = max_weight
+            # ---------------------------------------------------------------
+            # 2. Box constraints (min then max), long-short aware
+            # ---------------------------------------------------------------
+            arr = constrained.to_numpy()
 
-            # Final check on min weights after capping
-            constrained[constrained < min_weight] = 0.0
-            if constrained.sum() > 0:
-                constrained = constrained / constrained.sum()
+            try:
+                arr = apply_min_effective_weight(
+                    arr, min_weight=min_weight, long_short_side_exposure=long_short_exposure
+                )
+            except ValueError:
+                pass  # min_weight would remove every position on this leg; keep pre-min array
 
-            # -----------------------------------------------------------------
-            # Store results
-            # -----------------------------------------------------------------
-            date_weights = pd.DataFrame(
-                {
-                    "date": date,
-                    "ticker": constrained.index,
-                    "model": model,
-                    "portfolio": portfolio,
-                    "weight": constrained.values,
-                }
-            )
+            try:
+                arr = apply_max_position_weight(arr, max_weight=max_weight)
+            except ValueError:
+                pass  # infeasible cap for this number of positions; keep pre-cap array
 
-            date_weights = date_weights[date_weights["weight"] > 1e-10]
-            constrained_list.append(date_weights)
+            constrained = pd.Series(arr, index=constrained.index)
 
-            previous_weights = constrained.copy()
+            constrained_rows[curr_rebal_date] = constrained
+            previous_constrained = constrained
+            previous_rebal_date = curr_rebal_date
 
-    return pd.concat(constrained_list, ignore_index=True)
+        # ---------------------------------------------------------------
+        # 3. Rebalance-only output
+        # ---------------------------------------------------------------
+        rebalance_wide = pd.DataFrame(constrained_rows).T
+        rebalance_wide.index.name = "date"
 
+        rebal_long = rebalance_wide.reset_index().melt(
+            id_vars="date", var_name="ticker", value_name="weight"
+        )
+        rebal_long = rebal_long[rebal_long["weight"].abs() > 1e-10]
+        rebal_long["model"] = model
+        rebal_long["portfolio"] = portfolio
+        rebalance_records.append(rebal_long[["date", "ticker", "model", "portfolio", "weight"]])
+
+        # ---------------------------------------------------------------
+        # 4. Daily output — hold constrained weights until next rebalance
+        # ---------------------------------------------------------------
+        daily_wide = rebalance_wide.reindex(all_dates).ffill()
+
+        daily_long = daily_wide.reset_index().melt(
+            id_vars="date", var_name="ticker", value_name="weight"
+        )
+        daily_long = daily_long[daily_long["weight"].abs() > 1e-10]
+        daily_long["model"] = model
+        daily_long["portfolio"] = portfolio
+        daily_frames.append(daily_long[["date", "ticker", "model", "portfolio", "weight"]])
+
+    rebalance_weights = pd.concat(rebalance_records, ignore_index=True)
+    daily_weights = pd.concat(daily_frames, ignore_index=True)
+
+    return rebalance_weights, daily_weights
+
+
+def validate_turnover_and_box_constraints(
+    rebalance_weights: pd.DataFrame,
+    daily_weights: pd.DataFrame,
+    max_turnover_threshold: float = 0.30,
+    max_weight_threshold: float = 0.05,
+    min_weight_threshold: float = 0.005,
+) -> pd.DataFrame:
+    """
+    Quantitatively validates turnover limits, box constraints (min/max weights),
+    weight summation integrity, and daily weight drift consistency across all portfolios.
+
+    Parameters:
+    -----------
+    rebalance_weights : pd.DataFrame
+        DataFrame containing discrete rebalancing weights (only rebalancing dates).
+    daily_weights : pd.DataFrame
+        DataFrame containing expanded daily weights including inter-rebalance drift.
+    max_turnover_threshold : float
+        Maximum allowed single-period turnover (e.g., 0.30 for 30%).
+    max_weight_threshold : float
+        Maximum allowed individual asset allocation (e.g., 0.05 for 5.0%).
+    min_weight_threshold : float
+        Minimum allowed active allocation (e.g., 0.005 for 0.5%).
+
+    Returns:
+    --------
+    pd.DataFrame
+        Summary DataFrame with validation metrics and violation counts per (model, portfolio).
+    """
+    # 1. Ensure temporal order and deep copy
+    reb = rebalance_weights.copy()
+    reb = reb.sort_values(["model", "portfolio", "date", "ticker"])
+
+    validation_results = []
+
+    # Iterate over each unique model and portfolio strategy
+    for (model, portfolio), group in reb.groupby(["model", "portfolio"]):
+        # Pivot into wide format: rows=dates, columns=tickers, values=weights
+        pivot_weights = group.pivot(
+            index="date", columns="ticker", values="weight"
+        ).fillna(0.0)
+
+        # ---------------------------------------------------------------------
+        # A. TURNOVER VALIDATION (AT REBALANCE DATES)
+        # ---------------------------------------------------------------------
+        # Turnover_t = 0.5 * sum(|w_{i, t} - w_{i, t-1}|)
+        weight_diffs = pivot_weights.diff().abs().sum(axis=1) / 2.0
+
+        # Drop the first rebalance date (no prior portfolio to compare turnover against)
+        turnovers = weight_diffs.iloc[1:]
+
+        max_obs_turnover = turnovers.max() if not turnovers.empty else 0.0
+        mean_obs_turnover = turnovers.mean() if not turnovers.empty else 0.0
+        # Allow tiny numerical precision margin (+1e-6)
+        turnover_violations = (
+            turnovers > (max_turnover_threshold + 1e-6)
+        ).sum()
+
+        # ---------------------------------------------------------------------
+        # B. BOX CONSTRAINTS VALIDATION (MIN & MAX WEIGHTS)
+        # ---------------------------------------------------------------------
+        # Isolate active non-zero positions (ignore exact zero weights resulting from divestment)
+        active_weights = group[group["weight"] > 1e-6]["weight"]
+
+        max_obs_weight = group["weight"].max()
+        min_obs_effective_weight = (
+            active_weights.min() if not active_weights.empty else 0.0
+        )
+
+        # Count positions exceeding maximum threshold (> 5%)
+        positions_above_max = (
+            group["weight"] > (max_weight_threshold + 1e-6)
+        ).sum()
+
+        # Count active positions violating minimum threshold (0 < weight < 0.5%)
+        positions_below_min = (
+            (group["weight"] > 1e-6)
+            & (group["weight"] < (min_weight_threshold - 1e-6))
+        ).sum()
+
+        # ---------------------------------------------------------------------
+        # C. WEIGHT SUM INTEGRITY CHECK (SUM(W_i) == 1.0)
+        # ---------------------------------------------------------------------
+        # Ensure normalization step preserved 100% total investment allocation
+        # Long-Only portfolios must sum to 1.0
+        # Long-Short portfolios must sum to 0.0 (Market Neutral)
+        weight_sums = pivot_weights.sum(axis=1)
+        if portfolio.startswith("long_only"):
+            sum_violations = (~np.isclose(weight_sums, 1.0, atol=1e-4)).sum()
+        else:
+            # For Long-Short, net weight must equal 0.0
+            sum_violations = (~np.isclose(weight_sums, 0.0, atol=1e-4)).sum()
+
+        # ---------------------------------------------------------------------
+        # D. DRIFT DATASET INTEGRITY CHECK (DAILY WEIGHTS)
+        # ---------------------------------------------------------------------
+        daily_group = daily_weights[
+            (daily_weights["model"] == model)
+            & (daily_weights["portfolio"] == portfolio)
+        ]
+
+        # Check for missing values in the daily series
+        daily_nans = daily_group["weight"].isnull().sum()
+
+        # Check for invalid negative weights in Long-Only portfolios
+        is_long_only = portfolio.startswith("long_only")
+        negative_weight_violations = 0
+        if is_long_only:
+            negative_weight_violations = (daily_group["weight"] < -1e-6).sum()
+
+        # Append validation metrics for current strategy
+        validation_results.append(
+            {
+                "model": model,
+                "portfolio": portfolio,
+                "mean_turnover": mean_obs_turnover,
+                "max_turnover": max_obs_turnover,
+                "turnover_violations": turnover_violations,
+                "max_weight": max_obs_weight,
+                "min_effective_weight": min_obs_effective_weight,
+                "viol_above_max_weight": positions_above_max,
+                "viol_below_min_weight": positions_below_min,
+                "sum_weight_violations": sum_violations,
+                "daily_nan_count": daily_nans,
+                "daily_negative_weights": negative_weight_violations,
+            }
+        )
+
+    return pd.DataFrame(validation_results)
 
 # =============================================================================
 # Helper function to extract weighting strategy from portfolio name
@@ -532,6 +716,17 @@ def extract_weighting_scheme(portfolio_name):
         return "Signal Weighting"
     elif "equal_weight" in portfolio_name:
         return "Equal Weight"
+    return "Other"
+
+
+# =============================================================================
+# Helper function to extract exposure type (long-only vs long-short)
+# =============================================================================
+def extract_exposure_type(portfolio_name):
+    if portfolio_name.startswith("long_short_"):
+        return "Long-Short"
+    elif portfolio_name.startswith("long_only_"):
+        return "Long-Only"
     return "Other"
 
 

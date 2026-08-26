@@ -788,6 +788,37 @@ def apply_buffer_zone_selection(
     return buffered_tickers_by_date
 
 
+def compute_turnover_series_buffered(weights_df, model, portfolio_name):
+    """One-way turnover (0.5 * sum|delta w|) per rebalance date for a
+    single (model, portfolio) pair. Only used to calculate turnover for Buffer Zones."""
+    subset = weights_df[
+        (weights_df["model"] == model) & (weights_df["portfolio"] == portfolio_name)
+    ]
+    weights_wide = subset.pivot_table(
+        index="date", columns="ticker", values="weight", fill_value=0.0
+    ).sort_index()
+
+    dates = weights_wide.index
+    records = []
+    for i in range(1, len(dates)):
+        prev_w = weights_wide.loc[dates[i - 1]]
+        curr_w = weights_wide.loc[dates[i]]
+        diff = (curr_w - prev_w).abs()
+
+        was_in = prev_w > 1e-8
+        is_in = curr_w > 1e-8
+        n_entries = (is_in & ~was_in).sum()
+        n_exits = (was_in & ~is_in).sum()
+
+        records.append({
+            "date": dates[i],
+            "turnover": 0.5 * diff.sum(),
+            "n_entries": n_entries,
+            "n_exits": n_exits,
+        })
+    return pd.DataFrame(records)
+
+
 def analyze_buffer_eclipse_by_min_weight(
     comparison_pairs,
     portfolio_weights,
@@ -885,63 +916,3 @@ def analyze_buffer_eclipse_by_min_weight(
             )
 
     return pd.DataFrame(records)
-
-
-# =============================================================================
-# APPLY MAX/MIN WEIGHT CONSTRAINTS TO BUFFERED PORTFOLIOS
-# =============================================================================
-
-MAX_POSITION_WEIGHT = 0.05
-MIN_POSITION_WEIGHT = 0.005
-
-def apply_block7_constraints(weights_df, model, portfolio_name):
-    """Applies apply_max_position_weight then apply_min_effective_weight,
-    per rebalance date, to a single (model, portfolio) slice.
-
-    Returns a long DataFrame with the constrained weights, and a per-date
-    diagnostic log of any infeasibility encountered.
-    """
-    subset = weights_df[
-        (weights_df["model"] == model) & (weights_df["portfolio"] == portfolio_name)
-    ]
-
-    constrained_records = []
-    diagnostic_records = []
-
-    for date, group in subset.groupby("date"):
-        tickers = group["ticker"].to_numpy()
-        raw_weights = group["weight"].to_numpy()
-
-        n_active_raw = (raw_weights > 1e-8).sum()
-
-        try:
-            capped = apply_max_position_weight(
-                raw_weights.copy(), max_weight=MAX_POSITION_WEIGHT
-            )
-        except ValueError as e:
-            diagnostic_records.append({
-                "date": date, "step": "max_weight", "error": str(e),
-                "n_active_raw": n_active_raw,
-            })
-            capped = raw_weights.copy()  # fallback: keep uncapped for this date
-
-        try:
-            final_weights = apply_min_effective_weight(
-                capped.copy(), min_weight=MIN_POSITION_WEIGHT
-            )
-        except ValueError as e:
-            diagnostic_records.append({
-                "date": date, "step": "min_weight", "error": str(e),
-                "n_active_raw": n_active_raw,
-            })
-            final_weights = capped  # fallback: keep capped-only for this date
-
-        for ticker, w in zip(tickers, final_weights):
-            constrained_records.append({
-                "date": date, "ticker": ticker, "model": model,
-                "portfolio": portfolio_name, "weight": w,
-            })
-
-    constrained_df = pd.DataFrame(constrained_records)
-    diagnostics_df = pd.DataFrame(diagnostic_records)
-    return constrained_df, diagnostics_df

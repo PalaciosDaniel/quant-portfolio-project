@@ -202,13 +202,13 @@ def calculate_performance_metrics(
                 "observations": observations,
                 "cumulative_return": cumulative_return,
                 "CAGR": cagr,
-                "annualized_volatility": annualized_volatility,
+                "Ann_vol": annualized_volatility,
                 "Sharpe": sharpe_ratio,
                 "Sortino": sortino_ratio,
                 "Calmar": calmar_ratio,
-                "maximum_drawdown": maximum_drawdown,
+                "max_DD": maximum_drawdown,
                 "average_drawdown": average_drawdown,
-                "maximum_underwater_duration_days": maximum_underwater_duration,
+                "max_underwater_in_days": maximum_underwater_duration,
             }
         )
 
@@ -231,10 +231,10 @@ def calculate_performance_metrics(
         performance_metrics[
             [
                 "CAGR",
-                "annualized_volatility",
+                "Ann_vol",
                 "Sharpe",
                 "Sortino",
-                "maximum_drawdown",
+                "max_DD",
             ]
         ]
         .notna()
@@ -262,22 +262,22 @@ def calculate_performance_metrics(
                     "model",
                     "portfolio",
                     "CAGR",
-                    "annualized_volatility",
+                    "Ann_vol",
                     "Sharpe",
                     "Sortino",
                     "Calmar",
-                    "maximum_drawdown",
-                    "maximum_underwater_duration_days",
+                    "max_DD",
+                    "max_underwater_in_days",
                 ]
             ].to_string(
                 index=False,
                 formatters={
                     "CAGR": lambda x: f"{x:.2%}",
-                    "annualized_volatility": lambda x: f"{x:.2%}",
+                    "Ann_vol": lambda x: f"{x:.2%}",
                     "Sharpe": lambda x: f"{x:.3f}",
                     "Sortino": lambda x: f"{x:.3f}",
                     "Calmar": lambda x: f"{x:.3f}",
-                    "maximum_drawdown": lambda x: f"{x:.2%}",
+                    "max_DD": lambda x: f"{x:.2%}",
                 },
             )
         )
@@ -336,6 +336,43 @@ def calculate_benchmark_metrics(
         "CAGR": cagr,
         "annualized_volatility": ann_vol,
         "annualized_turnover": 0.0,
+        "Sharpe": sharpe,
+        "Sortino": sortino,
+        "Calmar": calmar,
+        "maximum_drawdown": max_dd,
+    }
+
+
+def calculate_benchmark_b_metrics(
+    returns: pd.Series,
+    ann_turnover_val: float,
+    trading_days: int = TRADING_DAYS_PER_YEAR,
+) -> dict:
+    """Computes performance and risk metrics for Benchmark B (Momentum Top 10 Constrained)."""
+    clean_returns = returns.dropna().astype(float)
+
+    if clean_returns.empty:
+        raise ValueError("Return series is empty after dropping NaNs.")
+
+    # Core performance metrics
+    cagr = calculate_cagr(clean_returns)
+    daily_vol = clean_returns.std(ddof=1)
+    ann_vol = daily_vol * np.sqrt(trading_days)
+
+    # Risk-adjusted metrics
+    sharpe = calculate_sharpe(clean_returns)
+    sortino = calculate_sortino(clean_returns)
+    max_dd, _, _ = calculate_drawdown_metrics(clean_returns)
+    calmar = cagr / abs(max_dd) if max_dd != 0 else np.nan
+
+    return {
+        "role": "Benchmark B",
+        "model": "Momentum Top 10",
+        "portfolio": "long_only_max_cap_5pct",
+        "frequency_days": 21,
+        "CAGR": cagr,
+        "annualized_volatility": ann_vol,
+        "annualized_turnover": ann_turnover_val,
         "Sharpe": sharpe,
         "Sortino": sortino,
         "Calmar": calmar,

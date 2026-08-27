@@ -15,8 +15,10 @@ def run_frequency_sensitivity_execution(
     all_trading_dates: pd.Index,
     rebalancing_frequencies: list[int],
     verbose: bool = True,
-) -> pd.DataFrame:
-    """Executes frequency sensitivity analysis across various rebalancing grids.
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Executes frequency sensitivity analysis across various rebalancing grids using
+
+    exact buy-and-hold daily weight drift between rebalances.
 
     Parameters
     ----------
@@ -28,33 +30,38 @@ def run_frequency_sensitivity_execution(
     all_trading_dates : pd.Index
         Complete trading calendar index.
     rebalancing_frequencies : list[int]
-        List of rebalancing step intervals (e.g., [1, 5, 10, 21]).
+        List of rebalancing step intervals (e.g., [5, 10, 21, 42, 63]).
     verbose : bool, default True
         If True, prints execution audit details.
 
     Returns
     -------
-    pd.DataFrame
-        Consolidated gross returns across all frequencies and strategies.
+    tuple[pd.DataFrame, pd.DataFrame]
+        - Consolidated daily gross returns across all frequencies and strategies.
+        - Consolidated turnover records per rebalance event across all
+        frequencies.
     """
-    frequency_results = []
+    all_returns_list = []
+    all_turnover_list = []
 
     for freq in rebalancing_frequencies:
-        # Construct & Filter Rebalancing Calendar
+        # 1. Calendar Construction
         all_weight_dates = (
             weights_raw["date"]
             .drop_duplicates()
             .sort_values()
             .reset_index(drop=True)
         )
-        rebalancing_dates = all_weight_dates.iloc[::freq]
+        rebalancing_dates = all_weight_dates.iloc[::freq].reset_index(
+            drop=True
+        )
 
         weights_df = weights_raw[
             weights_raw["date"].isin(rebalancing_dates)
         ].copy()
         rebal_dates = sorted(weights_df["date"].unique())
 
-        # Validate Rebalancing Frequency Grid
+        # Validate frequency consistency
         rebal_positions = [
             all_trading_dates.get_loc(date) for date in rebal_dates
         ]
@@ -65,71 +72,129 @@ def run_frequency_sensitivity_execution(
             " frequency."
         )
 
-        # Execution Engine per Model / Portfolio combination
-        gross_returns_list = []
         grouped_weights = weights_df.groupby(["model", "portfolio"])
 
         for (model, portfolio), group in grouped_weights:
-            # Pivot target weight matrix
-            weight_matrix = group.pivot(
-                index="date", columns="ticker", values="weight"
+            # Pivot target weight matrix (rebalance dates x tickers)
+            weight_matrix = (
+                group.pivot(index="date", columns="ticker", values="weight")
+                .fillna(0.0)
+                .reindex(rebal_dates)
+                .fillna(0.0)
+            )
+
+            # Align return matrix to the portfolio's tickers
+            returns_subset = asset_returns.reindex(
+                columns=weight_matrix.columns
             ).fillna(0.0)
 
-            # Prevent look-ahead bias (shift 1 day and forward-fill)
-            executed_weights = (
-                weight_matrix.reindex(all_trading_dates).shift(1).ffill()
-            )
+            daily_returns = []
+            daily_dates = []
+            turnover_records = []
 
-            # Trim dates prior to first execution date
-            first_rebalance_pos = all_trading_dates.get_loc(rebal_dates[0])
-            first_execution_pos = first_rebalance_pos + 1
-            executed_weights = executed_weights.iloc[first_execution_pos:]
+            # Loop through rebalance intervals
+            for k in range(len(rebal_dates) - 1):
+                t_rebal = rebal_dates[k]
+                t_next_rebal = rebal_dates[k + 1]
 
-            # Align asset returns
-            returns_subset = asset_returns.reindex(
-                index=executed_weights.index, columns=executed_weights.columns
-            )
+                # Execution starts T+1 to avoid look-ahead bias
+                pos_rebal = all_trading_dates.get_loc(t_rebal)
+                pos_next_rebal = all_trading_dates.get_loc(t_next_rebal)
 
-            # Daily gross portfolio returns
-            portfolio_daily_returns = (executed_weights * returns_subset).sum(
-                axis=1
-            )
+                exec_dates_window = all_trading_dates[
+                    pos_rebal + 1 : pos_next_rebal + 1
+                ]
 
-            # Build result DataFrame
-            result = pd.DataFrame(
+                # Target weight assigned at t_rebal executed at pos_rebal + 1
+                w_current = weight_matrix.loc[t_rebal].copy()
+
+                for d in exec_dates_window:
+                    r_d = returns_subset.loc[d]
+
+                    # 1. Daily Gross Return with current drifted weights
+                    p_ret = (w_current * r_d).sum()
+                    daily_returns.append(p_ret)
+                    daily_dates.append(d)
+
+                    # 2. Daily Weight Drift (buy-and-hold update)
+                    w_current = w_current * (1.0 + r_d) / (1.0 + p_ret)
+
+                # 3. Compute Turnover at t_next_rebal against drifted weights
+                w_target_next = weight_matrix.loc[t_next_rebal]
+
+                # Long-Short / Gross exposure aware drift handling
+                is_long_short = (weight_matrix < 0).any().any()
+                if is_long_short:
+                    w_prev_target = weight_matrix.loc[t_rebal]
+                    long_mask = w_prev_target > 0
+                    short_mask = w_prev_target < 0
+
+                    long_target_sum = w_prev_target[long_mask].sum()
+                    short_target_sum = -w_prev_target[short_mask].sum()
+
+                    drifted_long_sum = w_current[long_mask].sum()
+                    drifted_short_sum = -w_current[short_mask].sum()
+
+                    if drifted_long_sum > 0:
+                        w_current[long_mask] *= (
+                            long_target_sum / drifted_long_sum
+                        )
+                    if drifted_short_sum > 0:
+                        w_current[short_mask] *= (
+                            short_target_sum / drifted_short_sum
+                        )
+
+                turnover_k = 0.5 * (w_target_next - w_current).abs().sum()
+
+                # Execution date of next rebalance is pos_next_rebal + 1
+                next_exec_pos = (
+                    pos_next_rebal + 1
+                    if (pos_next_rebal + 1) < len(all_trading_dates)
+                    else pos_next_rebal
+                )
+                exec_date_next = all_trading_dates[next_exec_pos]
+
+                turnover_records.append(
+                    {
+                        "rebalance_date": t_next_rebal,
+                        "execution_date": exec_date_next,
+                        "model": model,
+                        "portfolio": portfolio,
+                        "rebalancing_frequency": freq,
+                        "turnover": turnover_k,
+                    }
+                )
+
+            # Build Daily Gross Returns DataFrame for this strategy
+            res_df = pd.DataFrame(
                 {
-                    "date": executed_weights.index,
+                    "date": daily_dates,
                     "model": model,
                     "portfolio": portfolio,
                     "rebalancing_frequency": freq,
-                    "gross_return": portfolio_daily_returns.values,
+                    "gross_return": daily_returns,
                 }
             )
-
-            result["cumulative_return"] = (
-                1.0 + result["gross_return"]
+            res_df["cumulative_return"] = (
+                1.0 + res_df["gross_return"]
             ).cumprod() - 1.0
-            gross_returns_list.append(result)
 
-        # Consolidate Current Frequency
-        frequency_results.append(
-            pd.concat(gross_returns_list, ignore_index=True)
-        )
+            all_returns_list.append(res_df)
+            all_turnover_list.append(pd.DataFrame(turnover_records))
 
-    # Consolidation — All Frequencies
+    # Consolidate outputs
     frequency_gross_returns = (
-        pd.concat(frequency_results, ignore_index=True)[
-            [
-                "date",
-                "model",
-                "portfolio",
-                "rebalancing_frequency",
-                "gross_return",
-                "cumulative_return",
-            ]
-        ]
+        pd.concat(all_returns_list, ignore_index=True)
         .sort_values(
             ["rebalancing_frequency", "date", "model", "portfolio"]
+        )
+        .reset_index(drop=True)
+    )
+
+    frequency_turnover = (
+        pd.concat(all_turnover_list, ignore_index=True)
+        .sort_values(
+            ["rebalancing_frequency", "execution_date", "model", "portfolio"]
         )
         .reset_index(drop=True)
     )
@@ -145,10 +210,10 @@ def run_frequency_sensitivity_execution(
 
     if verbose:
         print("=" * 80)
-        print("REBALANCING FREQUENCY SENSITIVITY — EXECUTION AUDIT")
+        print("REBALANCING FREQUENCY SENSITIVITY WITH DRIFT — EXECUTION AUDIT")
         print("=" * 80)
         print(f"✓ Frequencies tested = {rebalancing_frequencies}")
-        print(f"✓ Total observations = {len(frequency_gross_returns):,}")
+        print(f"✓ Total daily observations = {len(frequency_gross_returns):,}")
         print(
             f"✓ Unique frequencies ="
             f" {frequency_gross_returns['rebalancing_frequency'].nunique()}"
@@ -161,6 +226,9 @@ def run_frequency_sensitivity_execution(
             f"✓ Unique models = {frequency_gross_returns['model'].nunique()}"
         )
         print(
+            f"✓ Total portfolios evaluated = {frequency_gross_returns['model'].nunique() * frequency_gross_returns['portfolio'].nunique() * len(rebalancing_frequencies)}"
+        )
+        print(
             f"✓ Date range = {frequency_gross_returns['date'].min().date()} →"
             f" {frequency_gross_returns['date'].max().date()}"
         )
@@ -170,257 +238,130 @@ def run_frequency_sensitivity_execution(
         )
         print(f"✓ Duplicate observations = {duplicates:,}")
         print("=" * 80)
-        print("\nObservations by frequency:")
-        print(
-            frequency_gross_returns["rebalancing_frequency"]
-            .value_counts()
-            .sort_index()
-        )
 
-    return frequency_gross_returns
+    return frequency_gross_returns, frequency_turnover
 
-def run_frequency_sensitivity_engine(
-    weights_raw: pd.DataFrame,
-    asset_returns: pd.DataFrame,
-    all_trading_dates: pd.Index,
+
+def evaluate_frequency_tradeoff(
+    frequency_gross_returns: pd.DataFrame,
+    frequency_turnover: pd.DataFrame,
     rebalancing_frequencies: dict[int, str],
-    base_transaction_cost: float = 0.0015,
+    base_transaction_cost: float = 0.0015,  # 15 bps
     trading_days_per_year: int = 252,
-    risk_free_rate: float = 0.0,
     verbose: bool = True,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Evaluates strategy performance and turnover sensitivity across various rebalancing frequencies.
+) -> pd.DataFrame:
+    """Evaluates net performance metrics by applying transaction costs over the
 
-    Parameters
-    ----------
-    weights_raw : pd.DataFrame
-        Raw target weights containing ['date', 'model', 'portfolio', 'ticker',
-        'weight'].
-    asset_returns : pd.DataFrame
-        Asset daily returns matrix (dates as index, tickers as columns).
-    all_trading_dates : pd.Index
-        Complete trading calendar index.
-    rebalancing_frequencies : dict[int, str]
-        Dictionary mapping frequency in trading days to its label (e.g., {5:
-        "Weekly", 21: "Monthly"}).
-    base_transaction_cost : float, default 0.0015
-        Transaction cost factor per unit of turnover (15 bps).
-    trading_days_per_year : int, default 252
-        Number of trading days per year used for annualization.
-    risk_free_rate : float, default 0.0
-        Annualized risk-free rate for ratio calculations if required by external
-        functions.
-    verbose : bool, default True
-        If True, prints execution audit details.
-
-    Returns
-    -------
-    tuple[pd.DataFrame, pd.DataFrame]
-        - frequency_sensitivity: Summary performance metrics per
-        frequency/strategy.
-        - frequency_turnover: Detailed turnover time series across dates and
-        frequencies.
+    exact drifted turnover time series generated in execution.
     """
-    frequency_results = []
-    frequency_turnover = []
+    summary_results = []
+    freq_label_map = rebalancing_frequencies
 
-    all_weight_dates = (
-        weights_raw["date"]
-        .drop_duplicates()
-        .sort_values()
-        .reset_index(drop=True)
+    # Copy 
+    freq_gross = frequency_gross_returns.copy()
+    freq_to_df = frequency_turnover.copy()
+
+    freq_gross["date"] = pd.to_datetime(freq_gross["date"])
+    freq_to_df["execution_date"] = pd.to_datetime(freq_to_df["execution_date"])
+
+    grouped_returns = freq_gross.groupby(
+        ["rebalancing_frequency", "model", "portfolio"]
     )
 
-    for frequency, frequency_label in rebalancing_frequencies.items():
-        # 1. Construct Rebalancing Calendar
-        rebalancing_dates = all_weight_dates.iloc[::frequency]
+    for (freq, model, portfolio), group_ret in grouped_returns:
+        freq_label = freq_label_map.get(freq, f"{freq}D")
 
-        weights_df = weights_raw[
-            weights_raw["date"].isin(rebalancing_dates)
-        ].copy()
-        rebal_dates = sorted(weights_df["date"].unique())
-
-        # 2. Validate Rebalancing Calendar
-        rebal_positions = [
-            all_trading_dates.get_loc(date) for date in rebal_dates
+        # 1. Filter by turnover and freq
+        group_to = freq_to_df[
+            (freq_to_df["rebalancing_frequency"] == freq)
+            & (freq_to_df["model"] == model)
+            & (freq_to_df["portfolio"] == portfolio)
         ]
-        rebal_intervals = np.diff(rebal_positions)
 
-        assert np.all(rebal_intervals == frequency), (
-            f"Invalid {frequency}-day rebalancing calendar."
+        # Map turnover
+        to_map = group_to.set_index("execution_date")["turnover"].to_dict()
+        daily_to = group_ret["date"].map(to_map).fillna(0.0)
+
+        # 2. Net returns (without NaNs)
+        daily_tc = daily_to * base_transaction_cost
+        net_returns_array = group_ret["gross_return"].values - daily_tc.values
+        net_returns = pd.Series(net_returns_array, index=group_ret["date"])
+
+        # Aditional security check
+        if net_returns.isna().any():
+            net_returns = net_returns.fillna(0.0)
+
+        # 3. Metrics
+        cagr = calculate_cagr(net_returns)
+        annualized_vol = net_returns.std(ddof=1) * np.sqrt(
+            trading_days_per_year
+        )
+        sharpe = calculate_sharpe(net_returns)
+        sortino = calculate_sortino(net_returns)
+
+        (
+            max_dd,
+            avg_dd,
+            max_underwater,
+        ) = calculate_drawdown_metrics(net_returns)
+
+        # Ann Rotation
+        to_series = group_to["turnover"]
+        mean_turnover = to_series.mean() if len(to_series) > 0 else 0.0
+        rebalancings_per_year = trading_days_per_year / freq
+        annualized_turnover = mean_turnover * rebalancings_per_year
+
+        cum_gross = (1.0 + group_ret["gross_return"]).prod() - 1.0
+        cum_net = (1.0 + net_returns).prod() - 1.0
+        cum_tc = daily_tc.sum()
+
+        summary_results.append(
+            {
+                "frequency_days": freq,
+                "frequency_label": freq_label,
+                "model": model,
+                "portfolio": portfolio,
+                "CAGR": cagr,
+                "annualized_turnover": annualized_turnover,
+                "mean_turnover": mean_turnover,
+                "cumulative_gross_return": cum_gross,
+                "cumulative_net_return": cum_net,
+                "cumulative_transaction_cost": cum_tc,
+                "annualized_volatility": annualized_vol,
+                "Sharpe": sharpe,
+                "Sortino": sortino,
+                "maximum_drawdown": max_dd,
+                "average_drawdown": avg_dd,
+                "maximum_underwater_duration_days": max_underwater,
+            }
         )
 
-        # 3. Process Each Portfolio
-        grouped_weights = weights_df.groupby(["model", "portfolio"])
-
-        for (model, portfolio), group in grouped_weights:
-            # Target Weight Matrix
-            weight_matrix = (
-                group.pivot(index="date", columns="ticker", values="weight")
-                .fillna(0.0)
-                .reindex(rebalancing_dates)
-                .fillna(0.0)
-            )
-
-            # Turnover
-            previous_weights = weight_matrix.shift(1)
-            turnover = (
-                0.5 * (weight_matrix - previous_weights).abs().sum(axis=1)
-            )
-
-            # First formation has no previous portfolio
-            turnover = turnover.iloc[1:]
-
-            # Map Rebalance Dates to Execution Dates
-            execution_dates = [
-                all_trading_dates[all_trading_dates.get_loc(date) + 1]
-                for date in turnover.index
-            ]
-
-            turnover_series = pd.Series(
-                turnover.values,
-                index=execution_dates,
-                name="turnover",
-            )
-
-            # Executed Buy-and-Hold Weights
-            executed_weights = (
-                weight_matrix.reindex(all_trading_dates).shift(1).ffill()
-            )
-
-            first_rebalance = rebal_dates[0]
-            first_rebalance_pos = all_trading_dates.get_loc(first_rebalance)
-            first_execution_pos = first_rebalance_pos + 1
-
-            executed_weights = executed_weights.iloc[first_execution_pos:]
-
-            # Align Asset Returns
-            returns_subset = asset_returns.reindex(
-                index=executed_weights.index,
-                columns=executed_weights.columns,
-            ).fillna(0.0)
-
-            # Gross & Net Portfolio Returns
-            gross_returns = (executed_weights * returns_subset).sum(axis=1)
-
-            transaction_cost = (
-                turnover_series.reindex(gross_returns.index).fillna(0.0)
-                * base_transaction_cost
-            )
-
-            net_returns = gross_returns - transaction_cost
-
-            # Performance Metrics using imported functions
-            cagr = calculate_cagr(net_returns)
-            annualized_volatility = net_returns.std(ddof=1) * np.sqrt(
-                trading_days_per_year
-            )
-            sharpe = calculate_sharpe(net_returns)
-            sortino = calculate_sortino(net_returns)
-
-            (
-                maximum_drawdown,
-                average_drawdown,
-                maximum_underwater_duration_days,
-            ) = calculate_drawdown_metrics(net_returns)
-
-            # Annualized Turnover
-            mean_turnover = turnover_series.mean()
-            rebalancings_per_year = trading_days_per_year / frequency
-            annualized_turnover = mean_turnover * rebalancings_per_year
-
-            # Cumulative Returns
-            cumulative_gross_return = (1.0 + gross_returns).prod() - 1.0
-            cumulative_net_return = (1.0 + net_returns).prod() - 1.0
-            cumulative_transaction_cost = transaction_cost.sum()
-
-            # Store Performance Result
-            frequency_results.append(
-                {
-                    "frequency_days": frequency,
-                    "frequency_label": frequency_label,
-                    "model": model,
-                    "portfolio": portfolio,
-                    "CAGR": cagr,
-                    "annualized_turnover": annualized_turnover,
-                    "mean_turnover": mean_turnover,
-                    "cumulative_gross_return": cumulative_gross_return,
-                    "cumulative_net_return": cumulative_net_return,
-                    "cumulative_transaction_cost": cumulative_transaction_cost,
-                    "annualized_volatility": annualized_volatility,
-                    "Sharpe": sharpe,
-                    "Sortino": sortino,
-                    "maximum_drawdown": maximum_drawdown,
-                    "average_drawdown": average_drawdown,
-                    "maximum_underwater_duration_days": (
-                        maximum_underwater_duration_days
-                    ),
-                }
-            )
-
-            # Store Turnover Series
-            turnover_frequency_df = pd.DataFrame(
-                {
-                    "date": turnover_series.index,
-                    "frequency_days": frequency,
-                    "frequency_label": frequency_label,
-                    "model": model,
-                    "portfolio": portfolio,
-                    "turnover": turnover_series.values,
-                }
-            )
-
-            frequency_turnover.append(turnover_frequency_df)
-
-    # Consolidate Results
     frequency_sensitivity = (
-        pd.DataFrame(frequency_results)
+        pd.DataFrame(summary_results)
         .sort_values(["frequency_days", "model", "portfolio"])
         .reset_index(drop=True)
     )
 
-    frequency_turnover = (
-        pd.concat(frequency_turnover, ignore_index=True)
-        .sort_values(["frequency_days", "model", "portfolio", "date"])
-        .reset_index(drop=True)
-    )
-
-    # Audit
     if verbose:
         print("\n" + "=" * 80)
-        print("REBALANCING FREQUENCY SENSITIVITY — AUDIT")
+        print("REBALANCING FREQUENCY TRADEOFF ANALYSIS — AUDIT")
         print("=" * 80)
-        print(f"✓ Frequencies tested = {list(rebalancing_frequencies.keys())}")
+        print(f"✓ Frequencies evaluated = {list(rebalancing_frequencies.keys())}")
+        print(
+            f"✓ Applied transaction cost = {base_transaction_cost * 10000:.1f} bps"
+        )
         print(
             "✓ Total strategy-frequency observations ="
             f" {len(frequency_sensitivity):,}"
         )
         print(
-            f"✓ Unique models = {frequency_sensitivity['model'].nunique()}"
+            f"✓ Missing net CAGR ="
+            f" {frequency_sensitivity['CAGR'].isna().sum():,}"
         )
         print(
-            f"✓ Unique portfolios ="
-            f" {frequency_sensitivity['portfolio'].nunique()}"
-        )
-        print(
-            f"✓ Missing CAGR = {frequency_sensitivity['CAGR'].isna().sum():,}"
-        )
-        print(
-            f"✓ Missing Sharpe ="
+            f"✓ Missing net Sharpe ="
             f" {frequency_sensitivity['Sharpe'].isna().sum():,}"
         )
-        print(
-            "✓ Missing turnover ="
-            f" {frequency_sensitivity['annualized_turnover'].isna().sum():,}\n"
-        )
-
-        for frequency in rebalancing_frequencies:
-            rebalancing_dates = all_weight_dates.iloc[::frequency]
-            n_rebalances = len(rebalancing_dates)
-            print(
-                f" {frequency:>2} trading days → {n_rebalances:>3} rebalancings"
-            )
-
         print("=" * 80)
 
-    return frequency_sensitivity, frequency_turnover
+    return frequency_sensitivity

@@ -1,4 +1,5 @@
 import pandas as pd
+import pandas as np
 
 def compute_avg_portfolio_size(weights_df, model, portfolio_name):
     subset = weights_df[

@@ -434,3 +434,4 @@ DECISION: En el 10.2.1 si que utilizamos funciones auxiliares para calular el Sh
 ACLARACION: Hemos metido el apartado 10 del notebook 08 como apartado 3 (primer apartado) del notebook 09 porque tenia mas sentido que el portfolio performance estuviese en otro notebook distinto del portfolio construction. 
 
 SUGERENCIA: En el notebook 08 hemos cerrado con unas conclusiones pero no hemos guardado en ningun JSON o similar el metadata. Si que hemos ido guardando cosas en .parquet a lo largo del notebook pero a lo mejor estaria bien hacer un JSON explicito explicando el registro de los parámetros, reglas de selección, metodología de weighting, restricciones y supuestos utilizados para construir cada cartera
+

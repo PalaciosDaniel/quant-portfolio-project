@@ -1,4 +1,4 @@
-# Data Validation and Cleaning Methodology
+# 02. Data Validation and Cleaning — Theoretical Documentation
 
 ## Zero-Volume Day Handling Alternatives
 When encountering zero-volume days in raw equity price series, several handling options exist:

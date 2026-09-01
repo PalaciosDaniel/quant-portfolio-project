@@ -22,6 +22,9 @@ data/model_results/
 data/portfolio_results/
 *.parquet
 
+# Frozen universe manifest
+!data/universe_496.json
+
 # Keep folder structure
 !data/**/.gitkeep
 

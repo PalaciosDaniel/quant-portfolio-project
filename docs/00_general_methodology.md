@@ -106,15 +106,42 @@ While global Forward Horizon Truncation drops the final $h=21$ cross-sections of
 
 ---
 
-### Out-of-Sample Model Selection Criteria
+## Out-of-Sample Model Selection Criteria
 - **Primary Metric:** Models are evaluated out-of-sample primarily via **Rank Information Coefficient (Rank IC)** and **Rank IC Information Ratio (IR)**. Standard point-prediction loss metrics ($\text{RMSE}$, $\text{MAE}$) are tracked solely to verify scale stability but do not govern model selection.
 - **Acceptance Thresholds:** Production candidate signals must achieve an OOS Mean Rank IC $> 0.0200$ with an asymptotic $t$-statistic $> 2.0$ ($p < 0.05$) across non-overlapping execution dates.
 - **Signal Parsimony & Regularization:** In the presence of high inter-model rank correlation ($\rho > 0.90$), models exhibiting lower temporal IC volatility ($\sigma_{\text{IC}}$) are selected to ensure portfolio optimization stability downstream.
 
 ---
 
-### Cross-Sectional Decile Monotonicity Protocol
+## Cross-Sectional Decile Monotonicity Protocol
 - **Tie Resolution in Discrete Signals:** Tree-based predictive models exhibiting discretized forecast spaces are evaluated via cross-sectional percentile ranking (`method="first"`) prior to decile assignment to ensure balanced bucket sizing.
 - **Monotonicity Verification Standard:** Alpha signals are subjected to a two-stage Spearman rank monotonicity test across deciles:
   1. **Full Universe ($D_1\text{--}D_{10}$):** Tests global sorting capability.
   2. **Truncated Universe ($D_1\text{--}D_9$):** Isolates systemic sorting skill from top-decile ($D_{10}$) acceleration. A signal is verified as robust only if the truncated Spearman correlation preserves at least 80% of full-universe rank monotonicity.
+
+---
+
+## Portfolio Rebalancing Frequencies & Horizon Misalignment
+- **Target Horizon vs. Rebalance Frequency**: Predictions target a 21-day forward return horizon ($\text{forward\_return\_21d}$). While the default baseline rebalance frequency is matched to the signal horizon ($\Delta t = 21\text{ sessions}$), rebalance frequencies are treated as a distinct decision variable from target generation.
+- **Trade-off Mechanism**: Higher frequency rebalancing captures fresh rank changes but accelerates turnover and transaction costs. Lower frequency rebalancing reduces trading drag at the risk of alpha decay. Alternative rebalancing schedules ($\Delta t \in \{1, 5, 10, 21\}$ sessions) are tested to evaluate the net turnover-versus-decay curve.
+
+---
+
+## Model Space Exclusions
+- **Elastic Net Omission Criteria**: Elastic Net ($\text{L}_1 / \text{L}_2$ penalization) is excluded from portfolio generation pipelines when feature pre-selection already enforces strict low inter-factor collinearity. In low-dimensional factor sets ($\le 3$ orthogonalized features), Elastic Net collapses to Ridge-equivalent allocations without producing distinct alpha signals.
+
+---
+
+## Exposure & Neutrality Definitions
+
+### Long-Short Weight Allocation & Neutrality
+- **Target Exposure Scaling:** For long-short strategies, long legs are assigned target exposure $E_{\text{long}} = +0.5$ and short legs $E_{\text{short}} = -0.5$.
+- **Per-Side Equal Weighting:** On each rebalancing date $t$, position weights for long assets $N_{\text{long}, t}$ and short assets $N_{\text{short}, t}$ are computed independently:
+  $$w_{i, t}^{\text{long}} = \frac{E_{\text{long}}}{N_{\text{long}, t}}, \quad w_{j, t}^{\text{short}} = \frac{E_{\text{short}}}{N_{\text{short}, t}}$$
+- **Dynamic Rebalancing:** Asymmetries in cross-sectional asset availability across long and short quantiles are re-scaled daily to guarantee strict **net exposure neutrality** ($\sum w_i = 0$) and constant **gross exposure** ($\sum |w_i| = 1.0$).
+
+---
+
+## Rationale for Explicit Weight Caps (motivates Block 8 operational constraints)
+
+Even simple, unconstrained heuristic weighting schemes are vulnerable to severe concentration from data anomalies. In the portfolio-construction backtest, both **Inverse Volatility** and **Risk Parity** (neither of which carries an explicit position cap) produced single-asset weight spikes far above their typical range — up to **22.83%** in one case — when a single asset's estimated volatility or covariance behaved idiosyncratically, without any reduction in the number of active positions. This confirms that explicit position caps are necessary for *any* weighting scheme, not only optimizer-based ones, and justifies applying them uniformly across all portfolios in the operational-constraints stage rather than relying on a scheme's own construction to self-limit concentration.

@@ -145,3 +145,116 @@ While global Forward Horizon Truncation drops the final $h=21$ cross-sections of
 ## Rationale for Explicit Weight Caps (motivates Block 8 operational constraints)
 
 Even simple, unconstrained heuristic weighting schemes are vulnerable to severe concentration from data anomalies. In the portfolio-construction backtest, both **Inverse Volatility** and **Risk Parity** (neither of which carries an explicit position cap) produced single-asset weight spikes far above their typical range — up to **22.83%** in one case — when a single asset's estimated volatility or covariance behaved idiosyncratically, without any reduction in the number of active positions. This confirms that explicit position caps are necessary for *any* weighting scheme, not only optimizer-based ones, and justifies applying them uniformly across all portfolios in the operational-constraints stage rather than relying on a scheme's own construction to self-limit concentration.
+
+--- 
+
+## Operational Constraints Framework (motivates Block 8 in the portfolio-construction notebook)
+
+Not every constraint commonly used in institutional portfolio management is relevant to this project's experimental design. The framework applied uniformly to every portfolio (across models and universes) is organized into three categories:
+
+**Selected (core framework), applied to every portfolio:**
+- **Maximum position weight** ($w_i \le w_{\max} = 5\%$) — mandatory; extreme-concentration cases observed pre-constraint (up to a 45.92% single-asset weight and 0.2779 HHI) confirm this is needed to bound idiosyncratic risk and ensure real diversification.
+- **Minimum effective position weight** ($w_i \ge w_{\min} = 0.5\%$, else $w_i = 0$) — a post-optimization cleanup rule rather than a hard optimizer constraint, removing numerical "dust" positions that are operationally negligible but costly to hold/execute.
+- **Turnover control** — since portfolios rebalance every 21 days on dynamic ML signals across several weighting philosophies, turnover is the key variable connecting theoretical performance to net-of-cost economic viability.
+
+**Discarded as redundant or irrelevant:**
+- **Exposure constraints** — not added separately, since leverage and net/gross exposure are already fixed by the Long-Only / Long-Short construction mandate itself.
+- **Maximum cardinality** — redundant with the quantile-based selection cutoffs (Top 10/20/30%).
+- **Liquidity limits and tracking error** — not meaningful given the highly liquid S&P 500 universe and the absence of a benchmark-replication objective.
+
+**Discarded as structurally complex (future work):**
+- **Sector constraints** (would require a GICS-style taxonomy and per-industry limits) and **factor neutralization** (Fama-French/Barra, requiring continuous beta estimation) are both deferred to limitations/future work, since they would shift focus away from the project's central goal of evaluating the raw ML signal and allocation schemes.
+
+### Data Traceability Protocol
+
+To preserve experimental auditability, the original unconstrained portfolio allocations are retained in `portfolio_weights`. All downstream operational overlays (box constraints, min-weight cleanup, and turnover smoothing) generate a distinct, parallel data structure named `constrained_portfolio_weights`.
+
+--- 
+
+## Turnover Diagnostics & Hysteresis Justification  
+
+Before introducing hysteresis buffer zones, total turnover across portfolios is decomposed into two distinct sources:
+1. **Re-optimization / Continued Adjustment Turnover:** Weight changes among assets already present in the portfolio at $t-1$.
+2. **Marginal Selection Turnover:** Turnover driven by complete entries and exits at the universe boundary. This is further split into marginal oscillations (within $\pm 3$ percentile points of the selection cutoff) vs. deep non-marginal entries/exits.
+
+**Empirical Findings & Selective Application:**
+- **Risk-Based Schemes (Inverse Volatility & Risk Parity):** Individual risk metrics and risk-contribution figures fluctuate gradually but noisily near the cutoff. Under strict selection rules (Top 10%), marginal oscillations account for **35% to 49%** of total turnover without reflecting genuine changes in conviction. Applying a buffer zone ($\theta_{\text{out}} = \theta_{\text{in}} - 0.03$) stabilizes universe membership and substantially reduces execution friction.
+- **Optimized Schemes (Maximum Sharpe) & Signal Weighting:** Turnover is dominated by internal weight re-optimization driven by shifting active alpha forecasts ($\hat{\alpha}$) and covariance updates, or by signal re-ranking across the portfolio. Because buffer zones act exclusively on universe filtering rather than optimization weights, they provide negligible turnover relief here while adding unnecessary hyperparameter complexity.
+
+Consequently, buffer zones are applied selectively only to Risk-Based Top 10% portfolios, preserving method simplicity elsewhere.
+
+---
+
+## Turnover Measurement Convention (extends existing entry — adds the drift-adjusted formula)
+
+Two distinct turnover formulations are used across the project, deliberately:
+
+- **Diagnostic turnover** (buffer-zone decision, Section 7.1): computed directly on theoretical weights between consecutive rebalances, without market price drift, to isolate signal/selection-rule noise from market movement.
+
+- **Operational turnover** (Block 8 turnover cap, transaction-cost estimation, and net-return computation): incorporates **market drift**. At each rebalance $t_k$, turnover is measured against the weight vector the portfolio has actually drifted to since $t_{k-1}$ — not against the previous target weight:
+  
+  $$T_k = \frac12\sum_i \left| w_{i,t_k} - w_{i,t_k}^{\text{drifted}} \right|, \qquad w_{i,t_k}^{\text{drifted}} = \frac{w_{i,t_{k-1}}\left(1+R_{i,t_{k-1}\to t_k}\right)}{1+R_{p,t_{k-1}\to t_k}}$$
+  
+  where $R_{i,t_{k-1}\to t_k}$ is asset $i$'s compounded return over the holding period and $R_{p,t_{k-1}\to t_k} = \sum_i w_{i,t_{k-1}} R_{i,t_{k-1}\to t_k}$ is the portfolio's buy-and-hold return over that same interval. This captures the true operational rotation required to move the portfolio from its live market position to the new target vector — for both long-only and long-short constructions. Long-Only renormalizes to total exposure; each Long-Short leg renormalizes independently to preserve neutrality. This single definition governs both the Block 8 turnover cap and the transaction-cost model in the execution/backtesting notebook — it is not redefined per notebook.
+
+---
+
+## Turnover Smoothing — Design Choice
+
+Turnover is capped via **post-hoc linear interpolation** between the prior realized weight vector and the new raw target, rather than via a transaction-cost penalty term inside the optimizer itself (consistent with DeMiguel et al., 2009; Fastrich et al., 2015). Reasons: (1) avoids non-convex/non-differentiable terms that could break optimizer convergence across walk-forward iterations, (2) preserves the model's optimal weight direction while only limiting transition speed, (3) keeps execution logic modular and applies uniformly across every weighting scheme without touching model estimation. The externally-facing turnover target is 30%, but the internal design cap is set to **25%** to leave headroom for the downstream box-constraint cleanup (min/max weight enforcement), which otherwise pushes effective turnover above the nominal cap.
+
+### Design Headroom in Turnover Constraints (`MAX_TURNOVER_DESIGN`)
+
+While the institutional turnover target is capped at **30% per 21-day rebalance**, the internal smoothing algorithm enforces a stricter design threshold of **`MAX_TURNOVER_DESIGN = 25%`**. This $5\%$ safety buffer absorbs the inevitable weight expansion (turnover dilation) caused by downstream post-processing steps (pruning micro-positions below $0.5\%$ and iteratively re-capping positions that exceed $5.0\%$). Setting the internal interpolation target to 25% ensures that the final executable portfolio strictly 
+complies with the headline 30% turnover ceiling.
+
+---
+
+## Transaction Cost Assumptions
+
+Transaction costs are modeled as a flat linear cost applied to traded volume per 21-day rebalance, evaluated under three scenarios: **conservative (10 bps)**, **base (15 bps)**, **stressed (20 bps)**. The base case (0.15%) is the standard assumption used for headline cost figures in this project.
+
+**Future work (not implemented):** regime-dependent dynamic costs (wider bid-ask spreads during volatility spikes/sell-offs), non-linear price-impact models scaled by average daily volume (ADV), and asymmetric/fixed per-order costs for full position liquidation — noted as directions for more realistic microstructure modeling.
+
+--- 
+
+## Execution Lag Convention & Timing Framework
+
+To strictly eliminate look-ahead bias, portfolio targets computed from information available through trading session $t_k$ are never assumed tradable or active at $t_k$. Execution takes effect exactly one trading session later at $t_k+1$ (close of $t_k$ / open of $t_k+1$):
+
+$$\boldsymbol{w}_{t_{k}}^{\text{target}} = \mathcal{F}(\text{Information up to } t_k)$$
+
+$$\boldsymbol{w}_{t_{k}^+}^{\text{executed}} = \boldsymbol{w}_{t_{k}}^{\text{target}} \quad \text{applied at close of } t_k \text{ (or open of } t_k + 1\text{)}$$
+
+This lag convention is enforced uniformly across all backtesting routines, signal applications, and transaction cost calculations.
+
+---
+
+## Rebalancing Calendar & Intra-Period Buy-and-Hold Dynamics
+
+- **Rebalancing Frequency:** Fixed at **21 trading sessions** ($\text{REBALANCING\_FREQUENCY} = 21$), strictly aligned with the 21-day forward synthetic prediction target horizon (`forward_return_21d`).
+- **Signal Date ($t_k$):** The recorded rebalance timestamp in allocation datasets, marking the session close when prices and forecasts are finalized to build $\boldsymbol{w}_{t_{k}}^{\text{target}}$.
+- **Intra-Period Holding Horizon ($t_k + 1 \to t_{k+1}$):** Executed holdings generate portfolio returns from $t_k + 1$ through the next rebalance date $t_{k+1}$.
+- **Intra-Period Weight Drift:** Between rebalances, no intermediate trading occurs. Weights drift organically with relative asset performance:
+
+$$w_{i, t+1} = \frac{w_{i, t} \cdot (1 + R_{i, t+1})}{1 + R_{p, t+1}}$$
+
+where $R_{i, t+1}$ is asset $i$'s daily return and $R_{p, t+1} = \sum_{i} w_{i, t} R_{i, t+1}$ is the daily gross portfolio return. Asset weights reset to target only at scheduled rebalancing events ($t_{k+1}$).
+
+---
+
+## All-In Transaction Cost Model
+
+To evaluate real-world economic viability without over-parameterizing unavailable intraday microstructure metrics (order-book depth, asset-level ADV), transaction costs are modeled via a consolidated linear drag proportional to rebalance turnover:
+
+$$C_t = T_t \times c$$
+
+where $T_t$ represents the drift-adjusted rebalance turnover and $c$ is the single all-in fee coefficient bundling three core operational frictions:
+1. Explicit brokerage execution fees.
+2. Implicit bid-ask spread crossing costs.
+3. Market impact and execution slippage.
+
+**Sensitivity Scenarios:**
+- **Conservative Scenario:** $10\text{ bps}$ ($c = 0.0010$).
+- **Base Scenario (Reference Case):** $15\text{ bps}$ ($c = 0.0015$) — headline benchmark for net performance figures.
+- **Stressed Scenario:** $20\text{ bps}$ ($c = 0.0020$).

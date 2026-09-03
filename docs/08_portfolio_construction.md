@@ -193,3 +193,149 @@ Contrary to theoretical expectations, extreme market events do not necessarily r
 This empirical finding confirms that, even within simple heuristics, imposing explicit weight caps ($w_{\max}$) is strictly imperative to prevent severe concentration bias when facing data anomalies or temporary volatility collapses.
 
 ---
+
+## Buffer-Zone Turnover Diagnostic & Decomposition (Section 7.1)
+
+The turnover measured for the buffer-zone decision is computed directly on theoretical weights between consecutive rebalances ($w_t$ vs. $w_{t-1}$), **without** incorporating market price drift. This isolates pure signal/selection-rule noise from market movement, and is intentionally distinct from the drift-adjusted turnover formulation used in the operational-constraints stage (Section 8.3), whose purpose is to simulate real order execution.
+
+Prior to deciding on the implementation of hysteresis bands, total turnover is decomposed into two distinct drivers:
+1. **Re-optimization / Continued Adjustment Turnover:** Weight changes among assets already present in the portfolio at $t-1$.
+2. **Marginal Selection Turnover:** Turnover driven by complete entries and exits at the universe boundary. This is further split into marginal oscillations (within $\pm 3$ percentile points of the selection cutoff) vs. deep non-marginal entries/exits.
+
+**Empirical Evidence & Selective Trigger:**
+- **Risk-Based Schemes (Inverse Volatility & Risk Parity):** Individual risk metrics and risk-contribution figures fluctuate gradually but noisily near the cutoff. Under strict selection rules (Top 10%), marginal oscillations account for **35% to 49%** of total turnover without reflecting genuine changes in active conviction.
+- **Optimized Schemes (Maximum Sharpe) & Signal Weighting:** Turnover is overwhelmingly structural, driven by active alpha forecast ($\hat{\alpha}$) re-rankings and covariance updates across assets already selected. Because hysteresis bands act exclusively on universe filtering rather than optimization weights, they offer negligible turnover relief here.
+
+Consequently, buffer zones are applied selectively only to Risk-Based Top 10% portfolios, avoiding unnecessary hyperparameter complexity elsewhere.
+
+---
+
+## Buffer-Zone (Hysteresis) Mechanism — Design & Execution Details (Section 7.2)
+
+Two distinct thresholds replace the static percentile cutoff:
+- **Entry Threshold ($\theta_{\text{in}}$):** Matches the original selection cutoff (e.g., 90th percentile for Top 10%). An asset not present in the portfolio at $t-1$ can only enter at time $t$ if its score strictly exceeds this threshold.
+- **Exit Threshold ($\theta_{\text{out}} = \theta_{\text{in}} - b$):** An asset already held in the portfolio at $t-1$ remains included as long as its percentile rank stays above this looser threshold. Bandwidth is fixed at **$b = 0.03$** for all implementations.
+
+**Implementation Specifications:**
+- **Sequential Chronological Execution:** Because eligibility at time $t$ explicitly depends on the realized portfolio state at $t-1$, universe filtering cannot be vectorized across dates and requires chronological iteration to maintain portfolio state across consecutive rebalancing periods.
+- **Orthogonality to Allocation Rules:** The buffer mechanism operates exclusively on universe selection. Once the eligible asset pool is finalized under hysteresis rules, portfolio weights are calculated using the exact Inverse Volatility or Risk Parity formulations defined in Block 6.
+- **Quality Control:** Entry criteria for non-held assets stay strictly at $\theta_{\text{in}}$, ensuring the hysteresis band stabilizes existing positions without lowering the quality bar for new additions.
+
+---
+
+## Maximum Position Weight — Iterative Proportional Redistribution (Waterfall)
+
+The 5.0% cap ($w_i \le w_{\max} = 0.05$) is enforced via an **iterative proportional redistribution ("waterfall")** heuristic overlay, executed independently per date and per side (long/short):
+1. **Identify Breaches:** Detect all positions exceeding the 5.0% cap.
+2. **Clip & Pool:** Truncate those positions to exactly 5.0% and pool the total excess capital.
+3. **Proportional Redistribution:** Distribute the excess capital proportionally among remaining unclipped positions ($w_j < 5.0\%$).
+4. **Convergence Iteration:** Repeat steps 1–3 iteratively until all asset weights satisfy $w_i \le 5.0\%$ and sum precisely to target exposure ($\sum w = 1.0$ for Long-Only; target exposure per leg for Long-Short).
+
+This rule-based overlay was chosen over a hard optimizer-side constraint for closed-form schemes (Signal Weighting, Inverse Volatility, Risk Parity) since those do not solve an optimization problem to begin with. It also absorbs the renormalization-driven cap breach that occurs downstream in Maximum Sharpe after its minimum-weight cleanup, eliminating extreme concentration spikes without altering the relative ordinal ranking of assets.
+
+---
+
+## Minimum Effective Position Weight — Post-Optimization Cleanup
+
+The 0.5% floor ($w_{\min} = 0.005$) is enforced as a post-optimization cleanup rule designed to eliminate numerical "dust" positions (orders of magnitude $10^{-18}$ to $10^{-20}$) that add operational execution friction without contributing meaningfully to risk/return:
+- **Pruning & Renormalization:** Any position below 0.5% is zeroed out ($w_i = 0$), and its capital is redistributed proportionally among the remaining valid positions.
+- **Exposure Neutrality:** Long-Only and Long-Short portfolios are processed independently. For Long-Short strategies, each leg is pruned and renormalized separately to preserve original gross/net exposure and market neutrality.
+
+Hard cardinality constraints inside the optimizer were rejected, as they introduce integer programming complexity and convergence failures for no methodological benefit.
+
+---
+
+## Turnover Control & Smoothing Mechanics (Sections 8.3.3 & 8.3.4)
+
+Turnover is measured on **drift-adjusted operational weights** between consecutive 21-day rebalancing events. To constrain portfolio transition speed across all models without discarding new ML signal directions, a **post-hoc linear interpolation** mechanism is applied.
+
+When raw drift-adjusted turnover ($\text{Turnover}_t^{\text{raw}}$) exceeds the internal design threshold ($\text{MAX\_TURNOVER\_DESIGN} = 0.25$), a scalar attenuation factor $\gamma \in (0, 1)$ is derived:
+
+$$\gamma = \frac{0.25}{\text{Turnover}_t^{\text{raw}}}$$
+
+The executable constrained weight vector $w_t^{\text{constrained}}$ is constructed by linearly interpolating between the previously executed allocation $w_{t-1}^{\text{constrained}}$ and the new unconstrained target $w_t^{\text{raw}}$:
+
+$$w_t^{\text{constrained}} = w_{t-1}^{\text{constrained}} + \gamma \cdot (w_t^{\text{raw}} - w_{t-1}^{\text{constrained}})$$
+
+**Differential Portfolio Dynamics:**
+- **Optimized & Risk-Based Schemes (Maximum Sharpe, Risk Parity, Inverse Volatility):** The interpolation algorithm intervenes dynamically and regularly to smooth high weight volatility driven by risk-matrix updates and alpha shifts.
+- **Heuristic Schemes (Equal Weight & Signal Weighting):** The algorithm remains dormant during standard market regimes, operating strictly as a non-invasive risk dampener during extreme cross-sectional market shocks.
+
+**Design Buffer Headroom:**
+To prevent downstream box-constraint post-processing (pruning micro-positions below 0.5% and re-capping positions above 5.0%) from pushing effective turnover past the institutional ceiling, the internal smoothing target is set to **25%**. The resulting post-processing weight expansion dilutes turnover back up to the headline **30% operational ceiling**, ensuring strict dual compliance with position limits and turnover caps.
+
+---
+
+## Execution Timing & Lag Convention (Section 9.1)
+
+Target weight vectors $\boldsymbol{w}_{t_{k}}^{\text{target}}$ generated from data available through $t_k$ take effect at $t_k+1$ (close of $t_k$ / open of $t_k+1$), not at $t_k$ itself:
+
+$$\boldsymbol{w}_{t_{k}}^{\text{target}} = \mathcal{F}(\text{Data up to } t_k)$$
+
+$$\boldsymbol{w}_{t_{k}^+}^{\text{executed}} = \boldsymbol{w}_{t_{k}}^{\text{target}} \quad \text{active from } t_k+1$$
+
+This standard look-ahead bias avoidance rule applies project-wide across all backtests.
+
+---
+
+## Buy-and-Hold Intra-Period Dynamic
+
+Between rebalancing dates ($t_k + 1 \to t_{k+1}$), no intermediate trades occur and weights drift dynamically with relative asset returns:
+
+$$w_{i,t+1} = \frac{w_{i,t}\cdot(1+R_{i,t+1})}{1+R_{p,t+1}}$$
+
+where $R_{p,t+1} = \sum_i w_{i,t} R_{i,t+1}$ represents gross daily portfolio return. Weights reset to target strictly on scheduled rebalancing dates; no intermediate rebalancing or drift correction is performed.
+
+---
+
+## Turnover Definition — Drift-Adjusted Execution Stage (Section 10.2)
+
+At each rebalance event $t_k$, turnover is measured against the **drifted** weight vector $w_{i,t_k}^{\text{drifted}}$ that the portfolio actually reached through market price movements since $t_{k-1}$, rather than static past target weights:
+
+$$T_k = \frac12\sum_{i=1}^N \left|w_{i,t_k} - w_{i,t_k}^{\text{drifted}}\right|$$
+
+where drifted weights projected via compounded asset returns $R_{i, t_{k-1} \to t_k}$ are defined as:
+
+$$w_{i,t_k}^{\text{drifted}} = \frac{w_{i,t_{k-1}}(1+R_{i,t_{k-1}\to t_k})}{1+R_{p,t_{k-1}\to t_k}}$$
+
+For Long-Only portfolios, drifted weights re-normalize to total exposure; for Long-Short portfolios, each leg re-normalizes independently to preserve gross exposure and market neutrality.
+
+---
+
+## Consolidated Linear Transaction Cost Model (Section 10.1)
+
+Transaction costs are evaluated via a linear drag applied directly to traded volume at rebalance events:
+
+$$C_t = T_t \times c$$
+
+The single coefficient $c$ consolidates brokerage commissions, bid-ask spread crossing, and volume-driven market impact slippage. Three sensitivity fee scenarios are evaluated:
+- **Conservative:** $10\text{ bps}$ ($c = 0.0010$).
+- **Base (Headline Benchmark):** $15\text{ bps}$ ($c = 0.0015$).
+- **Stressed:** $20\text{ bps}$ ($c = 0.0020$).
+
+---
+
+## Calendar Mapping, Cost Deduction & Net Returns Computation (Section 10.2)
+
+Net portfolio performance is derived in three distinct steps:
+1. **Operational Calendar Mapping:** Each rebalance penalty $C_k = T_k \times c$ is mapped to its effective execution date ($t_k + 1$). On non-rebalancing intermediate trading sessions, imputed transaction cost is strictly zero ($C_t = 0.0$).
+2. **Net Return Calculation:** Imputed costs are subtracted directly from daily gross return series:
+
+$$R_{p,t}^{\text{net}} = R_{p,t}^{\text{gross}} - C_t$$
+
+3. **Cumulative Compounding:** Net asset value (NAV) curves are computed via daily compounding:
+
+$$\text{Cumulative Net Return}_T = \prod_{t=1}^T(1+R_{p,t}^{\text{net}}) - 1$$
+
+---
+
+## Primary Export Dataset: `net_portfolio_returns.parquet`
+
+The resulting dataset consolidates **16,464 out-of-sample observations** (392 trading sessions $\times$ 42 strategy combinations).
+
+**Schema & Column Structure:**
+- `date`, `model`, `portfolio`: Temporal and strategy identifiers.
+- `gross_return`: Unadjusted daily gross portfolio return.
+- `transaction_cost_conservative`, `transaction_cost_base`, `transaction_cost_stressed`: Imputed per-rebalance operational drag series.
+- `net_return_conservative`, `net_return_base`, `net_return_stressed`: Fee-adjusted daily net return series.
+- `cumulative_net_return_conservative`, `cumulative_net_return_base`, `cumulative_net_return_stressed`: Compounded out-of-sample cumulative net performance series, serving as direct inputs to downstream evaluation routines.

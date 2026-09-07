@@ -1,9 +1,11 @@
 [project]
 name = "quant-portfolio-project"
 version = "0.1.0"
-description = ""
+description = "Development of a cross-sectional predictive factor model using Machine Learning integrated with an equity portfolio 
+optimization framework. Rigorous out-of-sample econometric validation assessing statistical robustness, revealing alpha constraints 
+and high beta sensitivity relative to the S&P 500."
 authors = [
-    {name = "Daniel Palacios",email = "dppeco@gmail.com"}
+    {name = "Daniel Palacios",email = "dppeco2@gmail.com"}
 ]
 license = "MIT"
 readme = "README.md"

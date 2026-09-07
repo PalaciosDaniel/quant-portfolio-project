@@ -123,7 +123,7 @@ While global Forward Horizon Truncation drops the final $h=21$ cross-sections of
 
 ## Portfolio Rebalancing Frequencies & Horizon Misalignment
 - **Target Horizon vs. Rebalance Frequency**: Predictions target a 21-day forward return horizon ($\text{forward\_return\_21d}$). While the default baseline rebalance frequency is matched to the signal horizon ($\Delta t = 21\text{ sessions}$), rebalance frequencies are treated as a distinct decision variable from target generation.
-- **Trade-off Mechanism**: Higher frequency rebalancing captures fresh rank changes but accelerates turnover and transaction costs. Lower frequency rebalancing reduces trading drag at the risk of alpha decay. Alternative rebalancing schedules ($\Delta t \in \{1, 5, 10, 21\}$ sessions) are tested to evaluate the net turnover-versus-decay curve.
+- **Trade-off Mechanism**: Higher frequency rebalancing captures fresh rank changes but accelerates turnover and transaction costs. Lower frequency rebalancing reduces trading drag at the risk of alpha decay. Alternative rebalancing schedules ($\Delta t \in \{5, 10, 21, 42, 63\}$ sessions) are tested to evaluate the net turnover-versus-decay curve.
 
 ---
 

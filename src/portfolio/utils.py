@@ -1,5 +1,5 @@
+import numpy as np
 import pandas as pd
-import pandas as np
 
 def compute_avg_portfolio_size(weights_df, model, portfolio_name):
     subset = weights_df[
@@ -84,3 +84,27 @@ def format_comparison_table(df: pd.DataFrame) -> pd.DataFrame:
         lambda x: f"{x:.2%}"
     )
     return formatted
+
+# -------------------------------------------------------------------------
+# Helper Function for 7.4.4 Statistical Significance (notebook 09)
+# -------------------------------------------------------------------------
+
+TRADING_DAYS_PER_YEAR = 252
+
+def circular_block_bootstrap(values: np.ndarray, block_size: int, n_obs: int) -> np.ndarray:
+    n = len(values)
+    n_blocks = int(np.ceil(n_obs / block_size))
+    starts = np.random.randint(0, n, size=n_blocks)
+    path = np.concatenate(
+        [np.take(values, np.arange(s, s + block_size) % n) for s in starts]
+    )
+    return path[:n_obs]
+
+def bootstrap_sharpe_distribution(daily_returns: pd.Series, n_sims: int, block_size: int) -> np.ndarray:
+    values = daily_returns.values
+    n_obs = len(values)
+    sharpes = np.empty(n_sims)
+    for i in range(n_sims):
+        path = circular_block_bootstrap(values, block_size, n_obs)
+        sharpes[i] = (path.mean() / path.std(ddof=1)) * np.sqrt(TRADING_DAYS_PER_YEAR)
+    return sharpes

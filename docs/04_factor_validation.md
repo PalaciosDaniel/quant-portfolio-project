@@ -79,12 +79,16 @@ $$\rho_s(k) = \text{Corr}\left(\text{Rank}(F_{t}), \, \text{Rank}(F_{t-k})\right
 
 ### Cross-Sectional Average Spearman Correlation Structure
 Cross-sectional inter-factor dependence is audited via the average daily Spearman rank correlation matrix $\bar{\rho}_{i,j}$:
+
 $$\bar{\rho}_{i,j} = \frac{1}{T} \sum_{t=1}^{T} \text{Corr}\left(\text{Rank}(F_{i,t}), \, \text{Rank}(F_{j,t})\right)$$
+
 - **Why Spearman Rank Correlation:** Portfolio sorting and long-short quantile strategies rely on relative stock ordering rather than absolute linear magnitudes. Spearman correlation evaluates monotonicity while remaining completely robust to heavy-tailed non-Gaussian distribution features and extreme outliers. Averaging cross-sectional matrices daily isolates stable factor relationships from time-varying market regimes.
 
 ### Hierarchical Factor Clustering & Dendrogram Topology
 To move beyond pairwise visual inspection, inter-factor relationships are mapped into a non-parametric metric distance space:
+
 $$D(i, j) = 1 - |\bar{\rho}_{i,j}|$$
+
 Using average linkage hierarchical clustering on $D(i,j)$, the factor universe is partitioned into an empirical dendrogram topology.
 - **Why Hierarchical Clustering:** Transforming correlation into a metric distance allows unsupervised, quantitative grouping of factors. This visual topology identifies functional redundancy (isolating distinct risk, liquidity, momentum, and reversal sub-spaces) and prevents over-representing a single latent risk dimension in signal generation pipelines.
 
@@ -124,8 +128,6 @@ To robustly characterize the full distribution of daily predictive power, seven 
 * **Statistical Significance ($t\text{-stat}$ & $p\text{-value}$):** Evaluates whether historical alpha capacity is statistically distinguishable from zero:
 
 $$\text{t-statistic} = \frac{\bar{\text{IC}}}{\sigma_{\text{IC}} / \sqrt{N}}$$
-
-
 
 where $N$ represents the effective sample size of daily cross-sectional correlation observations.
 

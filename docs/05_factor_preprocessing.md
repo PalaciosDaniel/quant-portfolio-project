@@ -25,17 +25,28 @@ Across $N$ assets over daily cross-sections, the total percentage of clipped obs
 ## Cross-Sectional Standardization Mechanics
 
 ### Dual-Normalisation Strategy
+
 To supply tailored inputs for distinct statistical machine learning frameworks, two cross-sectional normalization transformations are executed date-by-date across all $t$:
 
 1. **Parametric Z-Score Standardisation**:
-   $$z_{i,t} = \frac{x_{i,t} - \mu_t}{\sigma_t}$$
-   * **Mathematical Role**: Enforces $\mu_t = 0, \sigma_t = 1$. Preserves exact metric distances, cross-sectional covariance structures, and linear proportions between asset signals.
-   * **Downstream Target**: Linear models (Elastic Net, Ridge) and Information Coefficient ($\text{IC}$) rank-correlation diagnostics.
+
+$$z_{i,t} = \frac{x_{i,t} - \mu_t}{\sigma_t}$$
+
+
+* **Mathematical Role**: Enforces $\mu_t = 0, \sigma_t = 1$. Preserves exact metric distances, cross-sectional covariance structures, and linear proportions between asset signals.
+* **Downstream Target**: Theoretically optimal for linear models (Elastic Net, Ridge) and Information Coefficient ($\text{IC}$) rank-correlation diagnostics.
+
 
 2. **Non-Parametric Uniform Rank Projection**:
-   $$r_{i,t} = \text{Rank}(x_{i,t}) - 0.5 \quad \text{where } \text{Rank}(x_{i,t}) \in (0, 1]$$
-   * **Mathematical Role**: Maps cross-sectional signals onto a uniform distribution centered on $[-0.5, 0.5]$. Completely eliminates residual heavy tails or non-Gaussianities without affecting cross-sectional ordinal sorting.
-   * **Downstream Target**: Gradient Boosted Decision Trees (LightGBM), ensuring split-criterion invariance to non-linear monotonicity.
+
+$$r_{i,t} = \text{Rank}(x_{i,t}) - 0.5 \quad \text{where } \text{Rank}(x_{i,t}) \in (0, 1]$$
+
+
+* **Mathematical Role & Temporal Stability**: Maps cross-sectional signals onto a uniform distribution centered on $[-0.5, 0.5]$. While tree-based models are naturally invariant to monotonic scaling within a *single* cross-section, they struggle with longitudinal panels where the underlying distribution shape changes daily. A Z-score of $+2.0$ might represent the top 5% of the market in a quiet regime but the top 1% during a crash. Uniform ranking forces every daily cross-section into the exact same geometric shape. A tree split at `> 0.40` consistently isolates the top 10% of the cross-section across the entire temporal panel, regardless of market volatility.
+* **Downstream Target & Empirical Implementation**: Designed to stabilize split-criteria for Gradient Boosted Decision Trees (LightGBM). However, during the modeling phase, all preprocessing pipelines (Z-Score and Rank Projection) are crossed with all candidate algorithms. The final pairing is strictly determined by empirical cross-validation metrics rather than relying solely on theoretical assumptions.
+
+---
+
 
 ## Target Alignment & Raw Scale Preservation
 

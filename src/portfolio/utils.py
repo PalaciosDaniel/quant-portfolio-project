@@ -108,3 +108,26 @@ def bootstrap_sharpe_distribution(daily_returns: pd.Series, n_sims: int, block_s
         path = circular_block_bootstrap(values, block_size, n_obs)
         sharpes[i] = (path.mean() / path.std(ddof=1)) * np.sqrt(TRADING_DAYS_PER_YEAR)
     return sharpes
+
+
+# -------------------------------------------------------------------------
+# Helper Functions for 3.2 Deflated Sharpe Ratio (notebook 10)
+# -------------------------------------------------------------------------
+
+from scipy.stats import norm, skew, kurtosis
+
+EULER_MASCHERONI = 0.5772156649
+
+def expected_max_sharpe(sr_variance: float, n_trials: int) -> float:
+    """Expected maximum Sharpe ratio by chance after n_trials independent trials."""
+    if n_trials <= 1:
+        return 0.0
+    return np.sqrt(sr_variance) * (
+        (1 - EULER_MASCHERONI) * norm.ppf(1 - 1.0 / n_trials)
+        + EULER_MASCHERONI * norm.ppf(1 - 1.0 / (n_trials * np.e))
+    )
+
+def probabilistic_sharpe_ratio(observed_sr, benchmark_sr, n_obs, ret_skew, ret_kurtosis):
+    numerator = (observed_sr - benchmark_sr) * np.sqrt(n_obs - 1)
+    denominator = np.sqrt(1 - ret_skew * observed_sr + ((ret_kurtosis - 1) / 4) * observed_sr**2)
+    return norm.cdf(numerator / denominator)

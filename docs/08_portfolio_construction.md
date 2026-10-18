@@ -129,7 +129,7 @@ $$\boldsymbol{\Sigma}_{\text{LW}} = (1-\lambda)\boldsymbol{\Sigma}_{\text{sample
 
 where the shrinkage intensity $\lambda \in [0, 1]$ is estimated analytically via the Ledoit-Wolf procedure.
 
-The marginal contribution to risk (MCR) of asset $i$, given position weights $\mathbf{w}$ and portfolio volatility $\sigma_p = \sqrt{\mathbf{w}^\top \boldsymbol{\Sigma}_{\text{LW}} \mathbf{w}}$, is defined as $(\boldsymbol{\Sigma}_{\text{LW}}\mathbf{w})_i / \sigma_p$. Consequently, the total risk contribution ($RC_i$) of asset $i$ is:
+The marginal contribution to risk (MCR) of asset $i$, given position weights $\mathbf{w}$ and portfolio volatility $\sigma _p = \sqrt{ \mathbf{w}^\top \boldsymbol{\Sigma}_{\text{LW}} \mathbf{w}}$, is defined as $(\boldsymbol{\Sigma}_{\text{LW}} \mathbf{w})_i /  \sigma _p$. Consequently, the total risk contribution ($RC_i$) of asset $i$ is:
 
 $$RC_i = w_i \cdot \frac{(\boldsymbol{\Sigma}_{\text{LW}}\mathbf{w})_i}{\sigma_p}$$
 
@@ -154,15 +154,15 @@ $$r_{i,t}^{\text{rank}} \longrightarrow \underbrace{\text{shape}\left(\text{pct}
 **Design:**
 
 1. **OOF predictions & path averaging:** CPCV historical predictions are averaged across paths ($\bar p_{i,t}$) to reduce variance and ensure uniqueness.
-2. **Cross-sectional normalization:** $\text{pct}_{i,t} = \text{rank}(\bar p_{i,t})/N_t \in [0,1]$, isolating the signal from global scale shifts.
-3. **21-day temporal purge:** Only pairs $(\text{pct}_{i,t'}, r_{i,t':t'+21})$ with fully realized returns ($t'+21 \le t$) are used, strictly preventing look-ahead bias.
+2. **Cross-sectional normalization:** $\text{pct} _{i \ t} = \text{rank}(\bar p_{i,t}) / N_t \in [0,1]$, isolating the signal from global scale shifts.
+3. **21-day temporal purge:** Only pairs $(\text{pct}_{i \ t'} \quadd r_{i \ t':t'+21})$ with fully realized returns ($t'+21 \le t$) are used, strictly preventing look-ahead bias.
 4. **Shape component (Isotonic Regression):** Valid pairs are grouped into deciles to compute their *relative* return ($r_{i,t}^{\text{rel}} = r_{i,t} - \bar r_t^{\text{universe}}$). Using relative returns prevents contamination from historical market regimes. An isotonic regression is fit over these 10 points using an expanding historical window.
 5. **Scale component (Regime Level):** $\text{scale}_t = \text{spread}_t^{\text{recent}}/\text{spread}^{\text{history}}$, where spread is the Top vs. Bottom decile return difference over an 85-day rolling window. To stabilize early Out-Of-Sample (OOS) sensitivity, it is shrunk towards a neutral $1.0$ proportional to the fraction of real OOS data ($w_t^{\text{OOS}}$) in the window:
 
 $$\text{scale}_t^{\text{adj}} = 1.0 + w_t^{\text{OOS}}\cdot(\text{scale}_t - 1.0)$$
 
 
-6. **Combination & Refresh:** $\hat{\alpha}_{i,t} = \text{shape}(\text{pct}_{i,t}) \times \text{scale}_t^{\text{adj}}$. This guarantees monotonic ranking is preserved. Both components refresh monthly to filter short-term noise.
+6. **Combination & Refresh:** $\hat{\alpha} _{i \ t} = \text{shape}(\text{pct}_{i \ t}) \times \text{scale}_t^{\text{adj}}$. This guarantees monotonic ranking is preserved. Both components refresh monthly to filter short-term noise.
 
 **Startup bias and its dissolution.** Neither component has enough genuine OOS data at OOS start, but the effect differs: shape's long history (CPCV over 14 years of train/validation) gives it a small, *pessimistic*-leaning startup bias (its submodels train on a $(K-1)/K$ fraction of the data available to the final model, so discriminative power starts slightly below production level); this dilutes slowly and is small from the start given the history/OOS size ratio. Scale is the component genuinely exposed at startup, since its short window is, early on, composed almost entirely of historical OOF observations. The shrink in point 5 directly addresses this asymmetry, letting scale approach its unadjusted value gradually as the window fills with real OOS data.
 

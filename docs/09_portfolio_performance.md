@@ -96,7 +96,7 @@ Testing every combination through expensive tests would be computationally waste
 
 Four benchmarks isolate, in sequence, each pipeline stage: $\text{ML Prediction} \to \text{Signal Selection} \to \text{Portfolio Weighting} \to \text{Final Strategy}$.
 
-**Benchmark A — Market Baseline.** $\text{S\&P 500 Buy \& Hold}$. Answers whether active ML-driven management adds enough value over passive market exposure.
+**Benchmark A — Market Baseline.** $\text{S\&P 500 Buy and Hold}$. Answers whether active ML-driven management adds enough value over passive market exposure.
 
 **Benchmark B — Momentum (Top 10%) → Equal Weight.** Isolates the ML model's discriminatory power against a mechanical cross-sectional momentum rule.
 
@@ -120,9 +120,9 @@ A candidate above the 95th empirical percentile ($p < 0.05$) rejects the null of
 
 Daily active return: $R_{\text{active}, t} = R_{\text{strategy}, t} - R_{b, t}$.
 
-* **Excess CAGR** = $\text{CAGR}_{\text{strategy}} - \text{CAGR}_{\text{benchmark}}$.
+* **Excess CAGR** $ = \text{CAGR}_{\text{strategy}} - \text{CAGR}_{\text{benchmark}}$.
 * **Tracking Error (TE)** — annualized std. dev. of daily active returns: $\text{TE} = \sigma(R_{\text{active}}) \times \sqrt{252}$. A high TE signals a portfolio structurally misaligned with the benchmark.
-* **Information Ratio (IR)** — excess return per unit of active risk: $\text{IR} = \dfrac{(\bar{R}_{\text{strategy}} - \bar{R}_b) \times 252}{\sigma(R_{\text{active}}) \times \sqrt{252}}$. Unlike Sharpe, IR isolates skill in remunerating deviation from the benchmark. **IR > 0.50** = solid; **IR > 1.00** = exceptional.
+* **Information Ratio (IR)** — excess return per unit of active risk: $\text{IR} = \frac{(\bar{R}_{\text{strategy}} - \bar{R}_b) \times 252}{\sigma(R_{\text{active}}) \times \sqrt{252}}$. Unlike Sharpe, IR isolates skill in remunerating deviation from the benchmark. **IR > 0.50** = solid; **IR > 1.00** = exceptional.
 
 ### Circular Block Bootstrap
 

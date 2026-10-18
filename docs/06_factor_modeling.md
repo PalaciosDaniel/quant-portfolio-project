@@ -7,11 +7,15 @@
 To accurately compare models trained on Z-Score vs. Percentile Rank normalizations, they must be evaluated on the exact same universe of assets ($N_{\text{obs}}$).
 
 1. **Complete-Case Filtering**:
-   $$\mathcal{D}_{\text{clean}} = \{(X_{i,t}, y_{i,t}) \in \mathcal{D}_{\text{raw}} \mid \text{NaN} \notin (X_{i,t} \cup \{y_{i,t}\})\}$$
+
+   $$I_{\text{clean}} = \{(X_{i,t}, y_{i,t}) \in D_{\text{raw}} \mid \text{NaN} \notin (X_{i,t} \cup \{y_{i,t}\})\}$$
+
    We drop any observations with missing values in either the features or the forward-return target.
 
 2. **Index Intersection Matching**:
-   $$\mathcal{I}_{\text{common}} = \text{Index}(\mathcal{D}_{\text{clean}, Z}) \cap \text{Index}(\mathcal{D}_{\text{clean}, \text{Rank}})$$
+
+   $$I_{\text{common}} = \text{Index}(D_{\text{clean}, Z}) \cap \text{Index}(D_{\text{clean}, \text{Rank}})$$
+
    We keep only the indices (assets/days) present in both cleaned datasets. Enforcing this guarantees that any performance difference comes from the mathematical normalization itself, avoiding sample biases (e.g., one method dropping hard-to-predict illiquid assets and artificially improving its metrics).
 
 ---

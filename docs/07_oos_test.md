@@ -4,7 +4,7 @@
 To evaluate model performance without look-ahead bias, data leakage, or implicit parameter tuning, the Out-of-Sample (OOS) evaluation period is strictly segregated from the development dataset using a temporal buffer inspired by Combinatorial Purged Cross-Validation (CPCV) principles.
 
 - **Development Boundary & Embargo:** Development training labels end in early December 2024. However, we cannot start the OOS test immediately on December 11. Since we predict a 21-day forward return, the target ($y$) for December 10 heavily overlaps with the target for December 11. An explicit embargo buffer is enforced through mid-January 2025 to break this serial correlation and prevent data leakage into the test set.
-- **Evaluation Window:** Fixed strictly from `2025-01-15` to `2026-07-10` (~1.5 years / 373 trading sessions). Fixing this window guarantees experiment reproducibility.
+- **Evaluation Window:** Fixed strictly from `2025-01-15` to `2026-06-18` (~1.5 years / 357 trading sessions). Fixing this window guarantees experiment reproducibility.
 - **Forward Label Buffer:** Requires extended price ingestion up to `2026-09-01` (+21 trading sessions past `OOS_END`) to ensure non-overlapping calculation of 21-day realized forward returns (`forward_return_21d`) for terminal test dates.
 
 ---

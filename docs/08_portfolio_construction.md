@@ -25,7 +25,7 @@
   - **Cross-Model Standardized Limits**: Target exposures are held strictly constant across all candidate models to ensure homogenous performance attribution, with position counts scaling dynamically based on active cross-sectional universe availability at each rebalance date.
 
 ### Universe & Pre-OOS History Allocation
-- **Risk Estimation Lookback**: Price coverage extends prior to the OOS prediction start date to supply sufficient historical lookback periods for empirical variance-covariance estimation, Ledoit-Wolf shrinkage, and factor loading estimations without truncating early OOS portfolio rebalance dates.
+- **Risk Estimation Lookback**: Price coverage extends prior to the OOS prediction start date to supply sufficient historical lookback periods for empirical variance-covariance estimation, and factor loading estimations without truncating early OOS portfolio rebalance dates.
 
 ---
 
@@ -93,15 +93,15 @@ $$\text{Net Exposure } (E_{\text{net},t}) = \sum_{i=1}^{N} w_{i,t} = E_{L,t} + E
 
 ## Portfolio Weighting Methodologies: Signal Weighting
 
-**Formulas.** For long-only:
+**Formulas.** 
+
+For long-only:
+
 $$w_{i,t} = \frac{r_{i,t}}{\sum_{j \in S_t} r_{j,t}}$$
+
 For long-short, each side is weighted independently to preserve $E_L=+0.50$, $E_S=-0.50$: the long side uses $r_{i,t}$ directly; the short side uses the bearish intensity $1-r_{i,t}$, so lower-ranked assets get larger absolute short weight.
 
-> **Note on target exposure:** this ±0.50 target is specific to Signal Weighting's long-short construction. `00_general_methodology.md` currently documents a *different* long-short target (±1.0, equal-weighted) for the baseline Long-Short Equal Weight portfolio — confirm whether this is an intentional per-method difference or should be reconciled (see conflict note below).
-
-**Rank recomputation.** The prediction rank is recalculated within the selected subset (not inherited from the full universe): a global rank would compress D10 values into $0.90$–$1.00$, producing a negligible tilt versus Equal Weight. Recomputing within-subset redistributes values across $[1/N, 1.0]$, allowing for meaningful differentiation among selected positions.
-
-**Alternative considered and discarded:** shifting the signal relative to the subgroup's min/max (e.g. $s_i = r_i - r_{\min}$ on the long side) to push the marginal asset's weight toward zero. Rejected because it forces that asset's weight to *exactly* zero, silently shrinking effective portfolio size and contradicting the diversification principle established earlier in the project. In-subset rank recomputation achieves the same penalization of marginal assets without ever reaching a literal zero weight ($\min = 1/N$ by construction).
+**Rank recomputation.** The prediction rank is recalculated within the selected subset (not inherited from the full universe): a global rank would compress D10 values into $0.90$ – $1.00$, producing a negligible tilt versus Equal Weight. Recomputing within-subset redistributes values across $[1/N, 1.0]$, allowing for meaningful differentiation among selected positions.
 
 ---
 
@@ -123,11 +123,17 @@ Allocates capital inversely to individual recent volatility, favoring more stabl
 
 ### Risk Parity
 
-Moves from individual asset risk to portfolio-level risk via the covariance matrix $\boldsymbol{\Sigma}_t$. Since the selected universe (50–150 assets) exceeds the 21-observation window, the sample covariance is unstable; **Ledoit-Wolf shrinkage** is applied:
+Moves from individual asset risk to portfolio-level risk via the covariance matrix $\boldsymbol{\Sigma}_t$. Because the number of selected assets ($N = 50\text{--}150$) exceeds the estimation window ($T = 21$ observations), the sample covariance matrix is ill-conditioned and unstable. To resolve this, **Ledoit-Wolf shrinkage** is applied:
+
 $$\boldsymbol{\Sigma}_{\text{LW}} = (1-\lambda)\boldsymbol{\Sigma}_{\text{sample}} + \lambda\boldsymbol{\Sigma}_{\text{target}}$$
-($\lambda$ estimated automatically via the Ledoit-Wolf procedure). Total risk contribution of asset $i$ given weights $\mathbf{w}$ and portfolio volatility $\sigma_p = \sqrt{\mathbf{w}^\top \boldsymbol{\Sigma}_{\text{LW}} \mathbf{w}}$:
+
+where the shrinkage intensity $\lambda \in [0, 1]$ is estimated analytically via the Ledoit-Wolf procedure.
+
+The marginal contribution to risk (MCR) of asset $i$, given position weights $\mathbf{w}$ and portfolio volatility $\sigma_p = \sqrt{\mathbf{w}^\top \boldsymbol{\Sigma}_{\text{LW}} \mathbf{w}}$, is defined as $(\boldsymbol{\Sigma}_{\text{LW}}\mathbf{w})_i / \sigma_p$. Consequently, the total risk contribution ($RC_i$) of asset $i$ is:
+
 $$RC_i = w_i \cdot \frac{(\boldsymbol{\Sigma}_{\text{LW}}\mathbf{w})_i}{\sigma_p}$$
-**Objective:** equalize $RC_i$ across assets ($RC_1 = \dots = RC_N$), not equalize capital — a more volatile or more correlated asset receives a smaller weight than a calmer, less-correlated one.
+
+**Objective:** Equalize risk contributions across all assets ($RC_1 = RC_2 = \dots = RC_N$) rather than capital allocations. Under Risk Parity, higher-volatility or highly correlated assets are assigned smaller weights to ensure an equal risk budget across the portfolio.
 
 ---
 
@@ -140,31 +146,31 @@ The process operates in two steps: first, relative cross-sectional ranks are cal
 #### Signal Calibration — Rank to Expected Alpha
 
 Raw ML predictions are trained on continuous loss functions and excel at *ranking* assets, but their absolute scale is unreliable due to variance compression (shrinkage) typical of tree-based models under low signal-to-noise ratios. Calibration converts cross-sectional rank into expected alpha via a two-part decomposition:
-$$r_{i,t}^{\text{rank}} \to \underbrace{\text{shape}(\text{pct}_{i,t})}_{\text{relative shape}} \times \underbrace{\text{scale}_t}_{\text{regime level}} = \hat\alpha_{i,t}$$
+
+$$r_{i,t}^{\text{rank}} \longrightarrow \underbrace{\text{shape}\left(\text{pct}_{i,t}\right)}_{\text{relative shape}} \times \underbrace{\text{scale}_t}_{\text{regime level}} = \hat{\alpha}_{i,t}$$
 
 **Why split shape and scale:** the two need very different sample sizes to estimate reliably. Shape is a 10-point (decile) function needing a long history to be non-noisy; scale is a single scalar that converges on relatively few recent observations. Splitting them lets each use its own appropriate window instead of forcing one suboptimal horizon for both.
 
 **Design:**
-1. **OOF predictions + path averaging.** Historical predictions come only from Combinatorial Purged Cross-Validation (CPCV), so the model never saw them in training. Since CPCV evaluates a given date across multiple $\binom{N}{k}$ paths, repeated (date, ticker) predictions are averaged into $\bar p_{i,t}$ to reduce variance and ensure uniqueness.
-2. **Cross-sectional percentile normalization:** $\text{pct}_{i,t} = \text{rank}(\bar p_{i,t})/N_t \in [0,1]$, isolating the signal from shifts in the model's global scale over time.
-3. **21-day temporal purge:** only pairs $(\text{pct}_{i,t'}, r_{i,t':t'+21})$ with a fully realized return window ($t'+21 \le t$) are used, eliminating look-ahead bias both in-history and as OOS progresses.
-   - *Alternative considered and discarded:* additionally exploiting the transition window between the end of validation and the start of OOS (final-model predictions on that stretch, already purged by the time OOS evaluation starts). Rejected because it would require rebuilding the full feature-generation pipeline (including winsorization and ranking) for that stretch — something never run past the validation cutoff — not just running inference on existing predictions. Given it represents only 1–2 months versus the ~4-month scale window, and Maximum Sharpe is one of several portfolio-construction methods rather than the project's central focus, the expected benefit didn't justify the engineering cost.
-4. **Shape component — isotonic regression on relative returns:** valid pairs are grouped into 10 percentile deciles; for each, the mean return *relative* to the cross-sectional universe mean on that date is computed ($r_{i,t}^{\text{rel}} = r_{i,t} - \bar r_t^{\text{universe}}$), not the absolute return. This relative-return choice is what makes the shape/scale split possible: fitting shape on absolute returns would implicitly bake in each historical period's market regime level, contaminating shape with the exact effect scale is meant to isolate. An isotonic regression (Pool Adjacent Violators, monotonic non-decreasing) is fit over these 10 points using an expanding window over all purged history.
-5. **Scale component — recent decile-spread multiple, with startup shrink:** $\text{spread}_t = \bar r^{\text{rel}}_{\text{decile 10}} - \bar r^{\text{rel}}_{\text{decile 1}}$, computed on a short rolling window of the last ~4× the prediction horizon (~85 sessions, ~4 months of purged history), normalized against the long-history spread used for shape: $\text{scale}_t = \text{spread}_t^{\text{recent}}/\text{spread}^{\text{history}}$.
-   - Scale is highly sensitive to window composition at OOS startup, when the ~4-month window is still mostly OOF historical data (no transition window buffers this, per point 3). A shrink toward the neutral value ($\text{scale}_t = 1.0$) proportional to the fraction of the window still historical is applied:
-     $$\text{scale}_t^{\text{adj}} = 1.0 + w_t^{\text{OOS}}\cdot(\text{scale}_t - 1.0), \quad w_t^{\text{OOS}} = \frac{\text{real OOS obs. in window}}{\text{total window size}}$$
-   - $\text{scale}_t^{\text{adj}}$ starts near 1.0 at OOS start and converges to the unadjusted $\text{scale}_t$ once the window is fully real-OOS (after ~4 months).
-6. **Combination and refresh frequency:** $\hat\alpha_{i,t} = \text{shape}(\text{pct}_{i,t}) \times \text{scale}_t^{\text{adj}}$. Since $\text{scale}_t^{\text{adj}} > 0$ by construction, decile monotonicity from shape is preserved. Both components refresh monthly (shape on the cumulative expanding window, scale on the short rolling window) to avoid reacting to short-term noise.
 
-**Startup bias and its dissolution.** Neither component has enough genuine OOS data at OOS start, but the effect differs: shape's long history (CPCV over 14 years of train/validation) gives it a small, *pessimistic*-leaning startup bias (its submodels train on a $(K-1)/K$ fraction of the data available to the final model, so discriminative power starts slightly below production level); this dilutes slowly and is small from the start given the history/OOS size ratio. Scale is the component genuinely exposed at startup, since its short window is, early on, composed almost entirely of historical OOF observations. The shrink in point 5 directly addresses this asymmetry, letting scale approach its unadjusted value gradually as the window fills with real OOS data. *Robustness check option:* compare shape/scale (with and without shrink) fit on historical data versus fit exclusively on real OOS pairs once the OOS sample is large enough for both.
+1. **OOF predictions & path averaging:** CPCV historical predictions are averaged across paths ($\bar p_{i,t}$) to reduce variance and ensure uniqueness.
+2. **Cross-sectional normalization:** $\text{pct}_{i,t} = \text{rank}(\bar p_{i,t})/N_t \in [0,1]$, isolating the signal from global scale shifts.
+3. **21-day temporal purge:** Only pairs $(\text{pct}_{i,t'}, r_{i,t':t'+21})$ with fully realized returns ($t'+21 \le t$) are used, strictly preventing look-ahead bias.
+4. **Shape component (Isotonic Regression):** Valid pairs are grouped into deciles to compute their *relative* return ($r_{i,t}^{\text{rel}} = r_{i,t} - \bar r_t^{\text{universe}}$). Using relative returns prevents contamination from historical market regimes. An isotonic regression is fit over these 10 points using an expanding historical window.
+5. **Scale component (Regime Level):** $\text{scale}_t = \text{spread}_t^{\text{recent}}/\text{spread}^{\text{history}}$, where spread is the Top vs. Bottom decile return difference over an 85-day rolling window. To stabilize early Out-Of-Sample (OOS) sensitivity, it is shrunk towards a neutral $1.0$ proportional to the fraction of real OOS data ($w_t^{\text{OOS}}$) in the window:
+
+$$\text{scale}_t^{\text{adj}} = 1.0 + w_t^{\text{OOS}}\cdot(\text{scale}_t - 1.0)$$
+
+
+6. **Combination & Refresh:** $\hat{\alpha}_{i,t} = \text{shape}(\text{pct}_{i,t}) \times \text{scale}_t^{\text{adj}}$. This guarantees monotonic ranking is preserved. Both components refresh monthly to filter short-term noise.
+
+**Startup bias and its dissolution.** Neither component has enough genuine OOS data at OOS start, but the effect differs: shape's long history (CPCV over 14 years of train/validation) gives it a small, *pessimistic*-leaning startup bias (its submodels train on a $(K-1)/K$ fraction of the data available to the final model, so discriminative power starts slightly below production level); this dilutes slowly and is small from the start given the history/OOS size ratio. Scale is the component genuinely exposed at startup, since its short window is, early on, composed almost entirely of historical OOF observations. The shrink in point 5 directly addresses this asymmetry, letting scale approach its unadjusted value gradually as the window fills with real OOS data.
 
 #### Validation & Empirical Diagnostics — Rank to Expected Alpha
 
-The primary trigger for equal-weight fallback dates stems from the *momentum crash* experienced by the S&P 500 in early 2025 following tariff announcements. During this severe correction, quantitative signals suffered a widespread breakdown, prompting the calibration algorithm to set the scale parameter to zero to protect the portfolio. This resulted in an activation rate of $16.67\%$ (62 out of 372 dates) for Ridge and XGBoost. Random Forest exhibited a lower activation rate of $11.29\%$ (42 dates) due to a faster recovery, detecting market stabilization and exiting the negative bias one month earlier than alternative models.
+The primary trigger for the equal-weight fallback was the early 2025 momentum crash following tariff announcements. To protect the portfolio during this widespread signal breakdown, the calibration algorithm set the scale parameter to zero. This fallback activated on 62 dates ($16.67\%$) for Ridge and XGBoost, while Random Forest exhibited a lower activation rate of 42 dates ($11.29\%$) by detecting market stabilization earlier.
 
-This dynamic is reflected with exact fidelity in the **cross-sectional variance of alpha**, where days with near-zero variance ($< 1\text{e-}12$) align precisely with each model's fallback dates (62 for Ridge/XGBoost, 42 for Random Forest), confirming that MVO optimization scaling operates with complete consistency. Finally, **ranking concordance (Spearman $\rho$)** demonstrates strong cross-sectional consensus among active predictions, highlighted by a high correlation between XGBoost and Random Forest ($\rho = 0.9634$), while dates omitted from the correlation match with mathematical precision the periods when signals were neutralized by the fallback mechanism.
-
-Regarding operational continuity, all pairwise model comparisons report an identical skip rate of 62 dates (16.67%). This uniform figure stems directly from the out-of-sample momentum reversal period. Correlation calculations require varying position weights and must skip rebalancing dates where either model in a pair generates flat, equal-weighted allocations due to zero-alpha fallbacks. Because Ridge and XGBoost experience 62 fallback dates while Random Forest experiences a subset of 42 dates during the same window, taking the union of flat dates for any model pair yields exactly 62 skipped evaluations. Accounting for these excluded regime shifts, the underlying non-zero weight rankings display near-zero instances of severe disagreement (percent of dates with correlation below 0.3 remains at 0.00% across nearly all configurations), confirming that active capital allocation remains highly cohesive when valid signals are present.
+This mechanism is verified by the cross-sectional variance of alpha, which drops to near-zero ($< 1\text{e-}12$) exactly on these specific fallback dates. During active periods (omitting the union of 62 flat dates from pairwise comparisons), the models demonstrate strong cross-sectional consensus. Ranking concordance is high—notably a Spearman $\rho = 0.9634$ between XGBoost and Random Forest—and severe disagreement (correlation $< 0.3$) remains at $0.00\%$. This confirms that when valid signals are present, active capital allocations remain highly cohesive.
 
 ### Portfolio Construction — Mean-Variance Optimization
 
@@ -249,7 +255,7 @@ Hard cardinality constraints inside the optimizer were rejected, as they introdu
 
 Turnover is measured on **drift-adjusted operational weights** between consecutive 21-day rebalancing events. To constrain portfolio transition speed across all models without discarding new ML signal directions, a **post-hoc linear interpolation** mechanism is applied.
 
-When raw drift-adjusted turnover ($\text{Turnover}_t^{\text{raw}}$) exceeds the internal design threshold ($\text{MAX\_TURNOVER\_DESIGN} = 0.25$), a scalar attenuation factor $\gamma \in (0, 1)$ is derived:
+When raw drift-adjusted turnover ($\text{Turnover}_t^{\text{raw}}$) exceeds the internal design threshold ($\text{MAX TURNOVER DESIGN} = 0.25$), a scalar attenuation factor $\gamma \in (0, 1)$ is derived:
 
 $$\gamma = \frac{0.25}{\text{Turnover}_t^{\text{raw}}}$$
 

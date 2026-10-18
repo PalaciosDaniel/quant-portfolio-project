@@ -99,7 +99,7 @@ While global Forward Horizon Truncation drops the final $h=21$ cross-sections of
 
 ## OOS Evaluation Window, Data Buffering & Pipeline Isolation
 - **Purging & Embargo Buffer:** Development training labels end in early December 2024 to accommodate the final 21-day forward return window. An explicit embargo buffer is enforced through mid-January 2025 (`2025-01-15`) to eliminate label overlap between development and OOS sets.
-- **OOS Boundary:** Evaluation window is strictly pinned from `2025-01-15` to `2026-07-10` (~1.5 years / 373 trading sessions) to ensure experiment reproducibility and prevent dynamic window expansion upon pipeline re-execution.
+- **OOS Boundary:** Evaluation window is strictly pinned from `2025-01-15` to `2026-06-18` (~1.5 years / 357 trading sessions) to ensure experiment reproducibility and prevent dynamic window expansion upon pipeline re-execution.
 - **Forward Label Buffer:** Price data ingestion extends **+37 calendar days (+21 trading days)** past `OOS_END` (through `2026-09-01`) to eliminate label truncation on terminal OOS test dates.
 - **Static Universe Enforcement (`universe_496.json`):** Out-of-sample evaluations enforce static universe matching against the 496 validated development assets via a lightweight manifest, excluding post-2024 index additions to isolate factor signal decay from universe composition changes.
 - **Vendor Data Drift & Reproducibility Protocol:** To protect downstream backtesting against retroactive open-source API changes (e.g., missingness caused by corporate actions like ticker deprecations/mergers), downstream inference strictly couples to frozen, fully-validated feature and target artifacts (`X_oos.parquet`, `y_oos.parquet`, $N=496$), treating live vendor queries purely as audit steps.
@@ -224,7 +224,7 @@ To strictly eliminate look-ahead bias, portfolio targets computed from informati
 
 $$\boldsymbol{w}_{t_{k}}^{\text{target}} = \mathcal{F}(\text{Information up to } t_k)$$
 
-$$\boldsymbol{w}_{t_{k}^+}^{\text{executed}} = \boldsymbol{w}_{t_{k}}^{\text{target}} \quad \text{applied at close of } t_k \text{ (or open of } t_k + 1\text{)}$$
+$$\boldsymbol{w}_{t_{k}^+}^{\text{executed}} = \boldsymbol{w}_{t_{k}}^{\text{target}} \quad \text{applied at close of } t_k \text{or open of } t_k + 1$$
 
 This lag convention is enforced uniformly across all backtesting routines, signal applications, and transaction cost calculations.
 
@@ -258,3 +258,26 @@ where $T_t$ represents the drift-adjusted rebalance turnover and $c$ is the sing
 - **Conservative Scenario:** $10\text{ bps}$ ($c = 0.0010$).
 - **Base Scenario (Reference Case):** $15\text{ bps}$ ($c = 0.0015$) — headline benchmark for net performance figures.
 - **Stressed Scenario:** $20\text{ bps}$ ($c = 0.0020$).
+
+---
+
+## Performance Metric Conventions
+- **Sharpe** in all performance tables is **CAGR ÷ annualized volatility, risk-free = 0** (not arithmetic mean/std). **Calmar** = CAGR ÷ |Maximum Drawdown|. The notebook 09 rolling Sharpe uses arithmetic mean/std × √252, so the two definitions differ by the volatility drag.
+- The same CAGR/vol Sharpe feeds the DSR in notebook 10 *[confirm the PSR function's expected definition]*.
+
+## Multiple-Testing Accounting
+- Two trial counts are always reported: **defensible** (unique model × scheme at 21d, N = 42) and **conservative** (full grid incl. frequencies, N = 210). The deflated PSR threshold is 0.95.
+- The verdict is count-sensitive (PSR 0.953 vs. 0.945). *[State whether earlier feature/hyperparameter searches are excluded from N.]*
+
+## Known Limitations of the Evaluation
+- **A single OOS window** (357 sessions, one strongly bullish regime) is reused by all post-selection tests; they measure sensitivity to design choices, not independent validation. No bear market is observed.
+- The final candidate and weighting scheme were **selected on OOS metrics** (notebook 09 §7.1); OOS performance is therefore not a clean holdout with respect to that choice.
+- The strategy is long-only, concentrated and high-beta (β ≈ 1.84): it is not defensive and will lose heavily in a prolonged decline. Absolute figures (CAGR ≈ 90%, Sharpe ≈ 2.5) should not be extrapolated.
+- **Future work (not implemented):** evaluation over earlier years including a bear market; beta-hedged variant; multi-seed retraining to measure retraining noise; reference-calibrated cross-sectional outlier test.
+
+## Known Universe Coverage Exceptions
+- GEV, SOLV: missing in the final model's feature file until late March 2025; present in independently rebuilt OOS features. FISV: missing on isolated dates; sector patched manually.
+- Sector labels come from Yahoo Finance (`data/raw/ticker_sectors.csv`), not official GICS.
+
+## Where Each Axis Is Tested
+- Rebalancing frequency (5–63d) at fixed 21d horizon: notebook 09 §5. Prediction horizon (5/10/21d) and training window at fixed 21d rebalancing: notebook 10 §4.

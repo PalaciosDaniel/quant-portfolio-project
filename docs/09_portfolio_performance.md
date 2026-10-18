@@ -96,7 +96,7 @@ Testing every combination through expensive tests would be computationally waste
 
 Four benchmarks isolate, in sequence, each pipeline stage: $\text{ML Prediction} \to \text{Signal Selection} \to \text{Portfolio Weighting} \to \text{Final Strategy}$.
 
-**Benchmark A — Market Baseline.** $\text{S\&P 500 Buy and Hold}$. Answers whether active ML-driven management adds enough value over passive market exposure.
+**Benchmark A — Market Baseline.** $\text{SP 500 Buy and Hold}$. Answers whether active ML-driven management adds enough value over passive market exposure.
 
 **Benchmark B — Momentum (Top 10%) → Equal Weight.** Isolates the ML model's discriminatory power against a mechanical cross-sectional momentum rule.
 

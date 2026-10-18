@@ -21,7 +21,7 @@
 ### Temporal Missingness Logic & IPO Handling
 - **Missing Value Origin:** Missing values ($\text{NaN}$) in cross-sectional return panels originate strictly from listing date boundaries (IPOs) or initial calculation lookback windows.
 - **Survivorship & Look-Ahead Guardrails:** Pre-IPO null values for assets listing mid-sample (e.g., ABNB, ZTS) are preserved as $\text{NaN}$ and strictly excluded from cross-sectional rankings at date $t$. Imputing pre-IPO values or back-filling prices introduces look-ahead bias and breaks unbalanced panel integrity.
-- **Lookback NaN Integrity:** Moving-window calculations generate structured leading $\text{NaN}$s corresponding to the parameter length (e.g., $252$ days for 12-1 momentum; $21$ days for 1-month reversal). Downstream models must drop or handle leading initialization windows explicitly during alignment.
+- **Lookback NaN Integrity:** Moving-window calculations generate structured leading $\text{NaNs}$ corresponding to the parameter length (e.g., $252$ days for 12-1 momentum; $21$ days for 1-month reversal). Downstream models must drop or handle leading initialization windows explicitly during alignment.
 
 --- 
 
@@ -29,7 +29,7 @@
 
 ### Skewness & Heavy-Tail Handling Protocols
 - **Raw Storage Policy:** All raw factor calculations (e.g., Amihud illiquidity, raw volatility ratios) are stored in `data/processed/` in their natural mathematical scale to preserve auditability.
-- **Downstream Preprocessing Pipeline:** Features exhibiting extreme right-skewness or multi-order-of-magnitude dispersion must undergo monotonic log-transformations ($\ln(X + \epsilon)$), cross-sectional Winsorization (e.g., at 1st and 99th percentiles), and cross-sectional $Z$-score standardization prior to training ML models (LightGBM / Elastic Net).
+- **Downstream Preprocessing Pipeline:** Features exhibiting extreme right-skewness or multi-order-of-magnitude dispersion must undergo monotonic log-transformations ( $\ln(X + \epsilon)$ ), cross-sectional Winsorization (e.g., at 1st and 99th percentiles), and cross-sectional $Z$-score standardization prior to training ML models (LightGBM / Elastic Net).
 
 --- 
 
@@ -122,7 +122,7 @@ While global Forward Horizon Truncation drops the final $h=21$ cross-sections of
 ---
 
 ## Portfolio Rebalancing Frequencies & Horizon Misalignment
-- **Target Horizon vs. Rebalance Frequency**: Predictions target a 21-day forward return horizon ($\text{forward\_return\_21d}$). While the default baseline rebalance frequency is matched to the signal horizon ($\Delta t = 21\text{ sessions}$), rebalance frequencies are treated as a distinct decision variable from target generation.
+- **Target Horizon vs. Rebalance Frequency**: Predictions target a 21-day forward return horizon ($\text{forward return 21d}$). While the default baseline rebalance frequency is matched to the signal horizon ($\Delta t = 21\text{ sessions}$), rebalance frequencies are treated as a distinct decision variable from target generation.
 - **Trade-off Mechanism**: Higher frequency rebalancing captures fresh rank changes but accelerates turnover and transaction costs. Lower frequency rebalancing reduces trading drag at the risk of alpha decay. Alternative rebalancing schedules ($\Delta t \in \{5, 10, 21, 42, 63\}$ sessions) are tested to evaluate the net turnover-versus-decay curve.
 
 ---
@@ -232,7 +232,7 @@ This lag convention is enforced uniformly across all backtesting routines, signa
 
 ## Rebalancing Calendar & Intra-Period Buy-and-Hold Dynamics
 
-- **Rebalancing Frequency:** Fixed at **21 trading sessions** ($\text{REBALANCING\_FREQUENCY} = 21$), strictly aligned with the 21-day forward synthetic prediction target horizon (`forward_return_21d`).
+- **Rebalancing Frequency:** Fixed at **21 trading sessions** ($\text{REBALANCING\_FREQUENCY} = 21$), strictly aligned with the 21-day forward synthetic prediction target horizon (`forward return 21d`).
 - **Signal Date ($t_k$):** The recorded rebalance timestamp in allocation datasets, marking the session close when prices and forecasts are finalized to build $\boldsymbol{w}_{t_{k}}^{\text{target}}$.
 - **Intra-Period Holding Horizon ($t_k + 1 \to t_{k+1}$):** Executed holdings generate portfolio returns from $t_k + 1$ through the next rebalance date $t_{k+1}$.
 - **Intra-Period Weight Drift:** Between rebalances, no intermediate trading occurs. Weights drift organically with relative asset performance:
@@ -278,6 +278,3 @@ where $T_t$ represents the drift-adjusted rebalance turnover and $c$ is the sing
 ## Known Universe Coverage Exceptions
 - GEV, SOLV: missing in the final model's feature file until late March 2025; present in independently rebuilt OOS features. FISV: missing on isolated dates; sector patched manually.
 - Sector labels come from Yahoo Finance (`data/raw/ticker_sectors.csv`), not official GICS.
-
-## Where Each Axis Is Tested
-- Rebalancing frequency (5–63d) at fixed 21d horizon: notebook 09 §5. Prediction horizon (5/10/21d) and training window at fixed 21d rebalancing: notebook 10 §4.

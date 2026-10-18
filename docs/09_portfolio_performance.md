@@ -32,7 +32,7 @@ Three metric families structure this notebook's multidimensional evaluation to d
 
 **The Information Ratio of the Signal (Signal Weighting).** Signal Weight's strong performance confirms the models' predicted return carries a monotonic alpha signal — magnitude, not just sign, indicates conviction. Scaling position size by signal intensity captures more of that alpha than passive Equal Weight, more than compensating for the added volatility.
 
-**Out-of-Sample Failure of Mean-Variance Optimization.** Maximum Sharpe portfolios' modest relative performance (mean Sharpe 1.388 vs. 1.614 for Equal Weight) is a textbook illustration of MVO's vulnerability to OOS estimation error (Michaud, 1989). Maximizing Sharpe in-sample assigns extreme weight to assets whose expected-return or covariance estimates carry the most noise; OOS, the resulting weight instability and its rebalancing cost penalize the risk-adjusted profile relative to more robust heuristics.
+**Out-of-Sample Failure of Mean-Variance Optimization.** Maximum Sharpe portfolios' modest relative performance (mean Sharpe 1.463 vs. 2.035 for Equal Weight) is a textbook illustration of MVO's vulnerability to OOS estimation error. Maximizing Sharpe in-sample assigns extreme weight to assets whose expected-return or covariance estimates carry the most noise; OOS, the resulting weight instability and its rebalancing cost penalize the risk-adjusted profile relative to more robust heuristics.
 
 **Concentration vs. Diversification Trade-off.** CAGR degrades progressively from Top 10% to Top 30%, showing predictive power concentrates at the extremes of the ranking ("tail alpha"). Adding names dilutes the captured risk premium in exchange for lower total volatility.
 
@@ -44,7 +44,7 @@ Three metric families structure this notebook's multidimensional evaluation to d
 
 ---
 
-## §5.1 — Sensitivity Framework & Frequency Grid
+## Sensitivity Framework & Frequency Grid
 
 Selecting the rebalancing frequency represents one of the most critical trade-offs in quantitative portfolio management. While frequent reweighting quickly adapts positions to evolving predictive signals, it also spikes turnover and transaction costs. Conversely, stretched frequencies reduce operational friction at the cost of allowing a progressive misalignment of the portfolio from its target optimal weights.
 
@@ -57,7 +57,7 @@ To evaluate this impact, this framework extends the analytical universe by testi
 
 ---
 
-## §6 — Subperiod Performance & Temporal Stability Analysis
+## Subperiod Performance & Temporal Stability Analysis
 
 To validate the robustness of the findings, assessing the average global performance over the entire OOS horizon is insufficient. An outstanding cumulative return could be the deceptive result of a single exceptionally favorable period.
 
@@ -73,7 +73,7 @@ This approach discriminates between architectures that offer genuine, persistent
 
 ---
 
-## §7 — Benchmark Comparison, Alpha Attribution & Rolling Performance
+## Benchmark Comparison, Alpha Attribution & Rolling Performance
 
 Evaluating a quantitative strategy in isolation is methodologically insufficient. A high return does not automatically imply predictive skill; it may simply reflect passive exposure to systematic risk factors (Market Beta) or anomalous, concentrated behavior. To validate whether the system generates **genuine alpha**, this block structures a five-phase evaluation framework:
 
@@ -83,7 +83,7 @@ Evaluating a quantitative strategy in isolation is methodologically insufficient
 4. **Active Management Metrics** (Tracking Error, Information Ratio).
 5. **Continuous Temporal Consistency** (Rolling performance, drawdown profiles).
 
-### §7.1 — Candidate Selection Methodology
+### Candidate Selection Methodology
 
 Testing every combination through expensive tests would be computationally wasteful. Four candidates are selected instead to synthesize the efficient frontier of the study:
 
@@ -92,7 +92,7 @@ Testing every combination through expensive tests would be computationally waste
 * **Highest Calmar** (`long_short_equal_weight`, XGBoost, 21d) — focused on capital preservation and bounding drawdowns during stress.
 * **Baseline ML** (`long_only_equal_weight`, RF, 21d) — the control isolating pure predictive skill from advanced portfolio construction techniques.
 
-### §7.2 — Benchmark Suite: Definitions & Design Rationale
+### Benchmark Suite: Definitions & Design Rationale
 
 Four benchmarks isolate, in sequence, each pipeline stage: $\text{ML Prediction} \to \text{Signal Selection} \to \text{Portfolio Weighting} \to \text{Final Strategy}$.
 
@@ -106,7 +106,7 @@ Four benchmarks isolate, in sequence, each pipeline stage: $\text{ML Prediction}
 
 **Constraint parity:** Benchmarks B and C use the identical operational constraint set as the ML portfolios (per-asset weight bounds, turnover limits) to guarantee any performance gap is strictly attributable to the predictive signal.
 
-### §7.3 — Monte Carlo Random-Selection Test: Methodology
+### Monte Carlo Random-Selection Test: Methodology
 
 $N=500$ pseudo-random portfolios are simulated preserving the real strategy's operational constraints (same universe dimension $K$, same 21-day frequency, same weighting scheme, and same 15 bps friction).
 
@@ -116,7 +116,7 @@ $$p_{\text{empirical}} = \frac{1}{N} \sum_{j=1}^{N} \mathbb{I}\left(\text{CAGR}_
 
 A candidate above the 95th empirical percentile ($p < 0.05$) rejects the null of chance selection, confirming the model extracts a real informational pattern.
 
-### §7.4 — Active Risk Metrics: Definitions
+### Active Risk Metrics: Definitions
 
 Daily active return: $R_{\text{active}, t} = R_{\text{strategy}, t} - R_{b, t}$.
 
@@ -124,11 +124,11 @@ Daily active return: $R_{\text{active}, t} = R_{\text{strategy}, t} - R_{b, t}$.
 * **Tracking Error (TE)** — annualized std. dev. of daily active returns: $\text{TE} = \sigma(R_{\text{active}}) \times \sqrt{252}$. A high TE signals a portfolio structurally misaligned with the benchmark.
 * **Information Ratio (IR)** — excess return per unit of active risk: $\text{IR} = \dfrac{(\bar{R}_{\text{strategy}} - \bar{R}_b) \times 252}{\sigma(R_{\text{active}}) \times \sqrt{252}}$. Unlike Sharpe, IR isolates skill in remunerating deviation from the benchmark. **IR > 0.50** = solid; **IR > 1.00** = exceptional.
 
-### §7.4.4 — Circular Block Bootstrap
+### Circular Block Bootstrap
 
 To test whether observed Sharpe advantages reflect genuine outperformance rather than temporal luck, a circular block bootstrap ($N=2000$, 21-day block size) resamples daily return paths while preserving the autocorrelation induced by the rebalancing cycle.
 
-### §7.4.5 — CAPM Alpha/Beta Regression
+### CAPM Alpha/Beta Regression
 
 CAPM regression against the S&P 500 utilizes Newey-West (HAC) robust standard errors with a 21-day lag. The 21-day rebalancing cycles induce memory and autocorrelation in daily returns; the HAC correction adjusts the covariance of estimators to prevent this noise from distorting t-statistics and p-values.
 
@@ -137,11 +137,11 @@ CAPM regression against the S&P 500 utilizes Newey-West (HAC) robust standard er
 * **Alpha t-stat / p-value** — significance of alpha ($\vert{}t\vert{} > 1.96$ or $p < 0.05$).
 * **R²** — share of strategy variance strictly explained by the S&P 500.
 
-### §7.5.1 — Rolling Sharpe Window Choice
+### Rolling Sharpe Window Choice
 
 Given an OOS horizon of ~1.5 years, a 126-session (6-month) rolling window balances statistical stability against temporal responsiveness. Including the S&P 500 establishes the real opportunity cost of capital, isolating whether performance reflects genuine predictive skill or simple market-beta exposure.
 
-### §7.5.2 — Continuous Drawdown Profile: Definition
+### Continuous Drawdown Profile: Definition
 
 Rather than summarizing downside risk in a single static figure (Maximum Drawdown), the continuous loss trajectory from the previous equity peak ($W_t$) is mapped:
 

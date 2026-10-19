@@ -41,7 +41,8 @@ The evidence is consistent with a genuine cross-sectional signal rather than a d
 14. [Limitations](#limitations)
 15. [Future Work](#future-work)
 16. [References](#references)
-17. [Contact](#contact)
+17. [License](#license)
+18. [Contact](#contact)
 
 ---
 
@@ -68,7 +69,7 @@ This is a self-taught, solo project. I am a physics student and I built it to ge
 ## Repository Structure
 
 ```
-Quant_Portfolio_Project/
+quant-portfolio-project/
 │
 ├── data/
 │   ├── model_results/
@@ -300,7 +301,7 @@ Notebook 10 stress-tests the highest-Sharpe portfolio (Random Forest, long only,
 | Removing the five best days | Passed with caveats | Sharpe falls from 2.474 to 1.479 and CAGR from 89.75% to 48.57%, still above the S&P 500 Sharpe of 1.016. |
 | Removing the best stock of each day | Not passed | CAGR falls to 0.26% and Sharpe to 0.006. |
 | Rolling beta, alpha and tracking error | Passed with caveats | Stable but high exposure: beta between 1.55 and 2.26 (mean 1.842) and alpha positive in most windows. |
-| Stress resampling | Not passed | −38.83% against −33.49% for the S&P 500; the strategy beats the index in only 27.7% of scenarios. |
+| Stress resampling | Not passed | −38.83% against −33.49% for the S&P 500; the strategy beats the index in only 26.7% of scenarios. |
 | Active drawdown | Passed with caveats | Maximum active drawdown of −18.15%, with up to 59 sessions below the benchmark. |
 
 ### Hyperparameter Sensitivity
@@ -318,12 +319,12 @@ The Sharpe ratio falls as the horizon grows, and the rolling window beats the ex
 
 The OOS window coincides with a strong technology rally, so portfolios are built within four sectors (top 20% of each sector, using the global Random Forest ranking filtered and re-ranked by sector, without retraining). Technology represents about 39.4% of the average weight of the main portfolio, with about 16 positions on average.
 
-| Sector | CAGR | Sharpe | Max. drawdown | Benchmark Sharpe |
-|---|---|---|---|---|
-| Financial Services | 31.36% | 1.136 | −22.34% | 0.5151 |
-| Healthcare | 17.00% | 0.679 | −28.02% | 0.264 |
-| Industrials | 51.00% | 1.627 | −29.33% | 0.962 |
-| Technology | 146.99% | 3.063 | −37.45% | 1.401 |
+| Sector | CAGR | Benchmark CAGR | Sharpe | Benchmark Sharpe | Max. drawdown | Benchmark max. drawdown | Information ratio |
+|---|---|---|---|---|---|---|---|
+| Financial Services | 31.36% | 9.88% | 1.136 | 0.515 | −22.34% | −17.80% | 1.333 |
+| Healthcare | 20.17% | 4.67% | 0.679 | 0.264 | −28.02% | −14.53% | 0.981 |
+| Industrials | 51.00% | 19.55% | 1.627 | 0.962 | −29.33% | −20.39% | 1.665 |
+| Technology | 146.99% | 36.76% | 3.063 | 1.401 | −37.45% | −25.93% | 2.337 |
 
 The signal beats the sector benchmark in every sector, so it does not depend on technology alone, but the magnitude is very uneven and technology still contributes a disproportionate part of the result.
 
@@ -335,32 +336,55 @@ A formal regime test was not run: the OOS window contains essentially a single b
 - **Market capture.** Of the 357 sessions, 204 are positive and 153 negative. Up-market capture is 211.7% and down-market capture is 171.4%: the strategy amplifies both rallies and declines.
 - **Stress resampling.** Synthetic years built from 21-session blocks drawn from the worst third of S&P 500 blocks (111 of 337 overlapping blocks, 2,000 scenarios of 12 blocks each), where the strategy loses more than the index.
 
+Conditional bootstrap results (2,000 synthetic stress years; the stress threshold of 0.18% is the maximum S&P 500 return among the selected blocks):
+
+| Portfolio | Mean synthetic CAGR | 95% CI | % of years profitable |
+|---|---|---|---|
+| S&P 500 (benchmark) | −33.49% | [−46.82%, −20.21%] | 0.0% |
+| Highest Sharpe (strategy) | −38.83% | [−64.22%, −6.13%] | 1.2% |
+
+The strategy outperforms the index in 26.7% of the stress scenarios, and its confidence interval is much wider than that of the benchmark.
+
 ---
 
 ## Main Results
 
-### Figures
-
-- [ ] Pipeline diagram
-- [ ] Rolling 21-session Rank IC and mean return by decile (OOS)
-- [ ] Equity curves of the four candidates against the S&P 500
-- [ ] Drawdown profiles and rolling Sharpe
-- [ ] Sector results and stress resampling distribution
-
 ### Tables
 
-**OOS predictive performance of the final models**
+**Final OOS metrics of the models**
 
 | Metric | Ridge | XGBoost | Random Forest |
 |---|---|---|---|
-| Mean Rank IC | 0.0522 | 0.0550 | 0.0546 |
-| ICIR | 0.2264 | 0.2704 | 0.2573 |
-| Daily Rank IC std | 0.230 | 0.203 | 0.212 |
-| Hit rate | ≈ 60% | ≈ 60% | ≈ 60% |
-| t-stat | > 4 | > 4 | > 4 |
+| Rank IC mean | 0.0522 | 0.0550 | 0.0546 |
+| Rank IC median | 0.0582 | 0.0573 | 0.0612 |
+| Rank IC std (daily) | 0.2304 | 0.2035 | 0.2124 |
+| Rank IC information ratio | 0.2264 | 0.2704 | 0.2573 |
+| Rank IC hit rate | 59.68% | 60.48% | 60.48% |
+| Rank IC t-statistic | 4.37 | 5.22 | 4.96 |
+| RMSE | 0.1061 | 0.1061 | 0.1060 |
+| MAE | 0.0748 | 0.0749 | 0.0750 |
 | Decile Spearman | 0.7500 | 0.9667 | 0.8833 |
 | D10−D1 | 2.8% | 3.75% | 3.75% |
 | Unique predictions | 182,612 | 285 | 4,680 |
+
+RMSE and MAE are practically identical across models, so they do not discriminate between them; the ranking metrics are the ones that matter for a cross-sectional strategy.
+
+**OOS decile portfolio returns** (mean realised 21-day forward return of the stocks in each prediction decile)
+
+| Decile | Ridge | XGBoost | Random Forest |
+|---|---|---|---|
+| 1 (lowest prediction) | 0.5890% | 0.3895% | 0.3785% |
+| 2 | 0.4976% | 0.6659% | 0.8405% |
+| 3 | 1.0799% | 0.8529% | 0.7445% |
+| 4 | 1.0384% | 0.8215% | 0.6153% |
+| 5 | 0.4861% | 0.8690% | 1.0470% |
+| 6 | 1.3674% | 1.5837% | 1.4546% |
+| 7 | 2.0897% | 1.3536% | 1.5949% |
+| 8 | 1.7783% | 1.6612% | 1.4301% |
+| 9 | 1.8020% | 1.7762% | 1.8734% |
+| 10 (highest prediction) | 3.3948% | 4.1419% | 4.1288% |
+
+Returns rise from the bottom to the top decile in all three models, and the top decile is clearly ahead (3.39% to 4.14%), but the middle deciles are not perfectly monotonic, which is why the decile Spearman is below one for Ridge and Random Forest. 
 
 The Rank IC t-statistic is the naive mean / (standard deviation / √n), without correction for the overlap of 21-day horizons, so "statistically significant" should be read with care. The daily Spearman correlation between model rankings is 0.956 (XGBoost vs Random Forest), 0.882 (Ridge vs Random Forest) and 0.837 (Ridge vs XGBoost). The rolling Rank IC diagnostic shows no evidence of data leakage.
 
@@ -388,18 +412,15 @@ The evidence is consistent with a genuine cross-sectional signal rather than a d
 
 ## Installation
 
-The project uses [Poetry](https://python-poetry.org/) for dependency management.
+The project requires Python 3.13 or later and uses [Poetry](https://python-poetry.org/) for dependency management.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/[username]/Quant_Portfolio_Project.git
-cd Quant_Portfolio_Project
+git clone https://github.com/PalaciosDaniel/quant-portfolio-project.git
+cd quant-portfolio-project
 
 # 2. Create the environment and install dependencies
 poetry install
-
-# 3. Activate the environment
-poetry shell
 ```
 
 ## Usage
@@ -407,12 +428,10 @@ poetry shell
 Run the notebooks in order, from `01_data_extraction.ipynb` to `10_robustness_stress_testing.ipynb`:
 
 ```bash
-jupyter lab
+poetry install --with dev
 ```
 
 The `data/` folder is git-ignored, with the exception of `data/universe_496.json`. Raw data is downloaded again from Yahoo Finance in notebook 01 (and again in notebook 07 for the OOS test), using the frozen list of 496 tickers in the OOS stage. The `docs/` folder contains the theory and the justification of every decision, one file per notebook.
-
-> [Add a short basic example here, e.g. how to load the final models and reproduce the OOS ranking metrics.]
 
 ---
 
@@ -443,12 +462,10 @@ The `data/` folder is git-ignored, with the exception of `data/universe_496.json
 - Amihud, Y. (2002). *Illiquidity and Stock Returns: Cross-Section and Time-Series Effects.*
 - Jegadeesh, N. and Titman, S. (1993). *Returns to Buying Winners and Selling Losers.*
 - Ledoit, O. and Wolf, M. (2004). *A Well-Conditioned Estimator for Large-Dimensional Covariance Matrices.*
-- Newey, W. K. and West, K. D. (1987). *A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix.*
-- Lundberg, S. and Lee, S.-I. (2017). *A Unified Approach to Interpreting Model Predictions.*
-- Akiba, T. et al. (2019). *Optuna: A Next-generation Hyperparameter Optimization Framework.*
 
 ### Books
 
+- Hull, J. C. *Options, Futures, and Other Derivatives.*
 - López de Prado, M. (2018). *Advances in Financial Machine Learning.*
 
 ### Documentation
@@ -457,11 +474,17 @@ The `data/` folder is git-ignored, with the exception of `data/universe_496.json
 
 ---
 
+## License
+
+This project is released under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+---
+
 ## Contact
 
 **Author**
 
-- Name: [Name]
-- LinkedIn: [link]
-- GitHub: [link]
-- Email (optional): [email]
+- Name: Daniel Palacios Prieto
+- LinkedIn: [daniel-palacios-prieto](https://www.linkedin.com/in/daniel-palacios-prieto-a65200322/)
+- GitHub: [PalaciosDaniel](https://github.com/PalaciosDaniel)
+- Email: dppeco2@gmail.com
